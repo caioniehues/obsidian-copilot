@@ -20,6 +20,20 @@ services:
       - ./data:/obsidian-copilot/data
       - ${OBSIDIAN_PATH}:/obsidian-vault
       - ${TRANSFORMER_CACHE}:/root/.cache/huggingface/hub
+      # Mount Claude CLI from host (if available)
+      - ${CLAUDE_CODE_PATH:-/usr/local/bin/claude}:/usr/local/bin/claude:ro
+    environment:
+      # Claude configuration
+      - USE_CLAUDE_BACKEND=${USE_CLAUDE_BACKEND:-false}
+      - CLAUDE_CODE_PATH=${CLAUDE_CODE_PATH:-/usr/local/bin/claude}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-5-sonnet-20241022}
+      - MAX_CONTEXT_TOKENS=${MAX_CONTEXT_TOKENS:-100000}
+      - GENERATION_TIMEOUT=${GENERATION_TIMEOUT:-60}
+      # OpenAI configuration (backward compatibility)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Other settings
+      - DEBUG=${DEBUG:-false}
+      - MAX_CHUNKS=${MAX_CHUNKS:-20}
     ports:
       - 8000:8000
     command: /bin/bash -c "python -m uvicorn src.app:app --host 0.0.0.0 --port 8000"

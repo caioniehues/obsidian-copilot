@@ -169,4 +169,4 @@ notebooks/
 # Data
 data/
 data-local/
-plugin/node_modules/
+plugin/node_modules/.idea/

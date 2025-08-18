@@ -1,20 +1,30 @@
 import { App, Editor, MarkdownView, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
+// Claude-optimized Copilot settings
 interface CopilotPluginSettings {
-	model: string;
-	apiKey: string;
+	backendUrl: string;
+	claudeModel: string;
+	contextStrategy: 'full_docs' | 'smart_chunks' | 'hierarchical';
+	maxContextTokens: number;
+	showGenerationTime: boolean;
 	systemContentDraftSection: string;
 	systemContentDraftSectionNoContext: string;
 	systemContentReflectWeek: string;
+	enableVaultAnalysis: boolean;
+	enableSynthesis: boolean;
 }
 
 const DEFAULT_SETTINGS: CopilotPluginSettings = {
-	model: 'gpt-3.5-turbo',
-	apiKey: 'sk-xxxxxxxxxx',
-	systemContentDraftSection: "You are Obsidian-Copilot, a friendly AI assistant that helps writers craft drafts based on their notes.\n\nYour task is to generate a few paragraphs based on a given section heading and related context of documents. When you reference content from a document, append the sentence with a markdown reference that links to the document's title. For example, if a sentence references context from 'Augmented Language Models.md', it should end with ([source](Augmented%20Language%20Models.md)).",
-	systemContentDraftSectionNoContext: "You are Obsidian-Copilot, a friendly AI assistant that helps writers craft drafts based on their notes.\n\nYour task is to generate a few paragraphs based on a given section heading.",
-	systemContentReflectWeek: "You are a friendly AI therapist that helps users reflect on their week and evoke feelings of gratitude, positivity, joy for life. Given their journal entries, write a paragraph for each of the following:\n\n* Celebrate what went well\n* Reflect on areas for growth\n* Suggest goals for next week"
+	backendUrl: 'http://localhost:8000',
+	claudeModel: 'claude-3-5-sonnet-20241022',
+	contextStrategy: 'smart_chunks',
+	maxContextTokens: 100000,
+	showGenerationTime: true,
+	systemContentDraftSection: "You are Claude-powered Obsidian Copilot, an advanced AI assistant that helps writers craft drafts based on their notes.\n\nWith access to a 200K token context window, you can understand entire documents and their relationships. When you reference content from a document, append the sentence with a markdown reference that links to the document's title. For example, if a sentence references context from 'Augmented Language Models.md', it should end with ([source](Augmented%20Language%20Models.md)).",
+	systemContentDraftSectionNoContext: "You are Claude-powered Obsidian Copilot, an advanced AI assistant that helps writers craft drafts.\n\nGenerate comprehensive content based on the given section heading, leveraging your extensive knowledge and reasoning capabilities.",
+	systemContentReflectWeek: "You are a thoughtful AI companion powered by Claude, helping users reflect on their week with deep insight and empathy. Given their journal entries, provide a thoughtful analysis for each of the following:\n\n* Celebrate what went well\n* Reflect on areas for growth\n* Suggest goals for next week",
+	enableVaultAnalysis: true,
+	enableSynthesis: true
 }
 
 export default class CopilotPlugin extends Plugin {
@@ -46,20 +56,111 @@ export default class CopilotPlugin extends Plugin {
 	}
 
 
-	private async queryLLM(messages: Array<any>, model: string, temperature = 0.7) {
-		return await fetch('https://api.openai.com/v1/chat/completions', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'Authorization': `Bearer ${this.settings.apiKey}`
-			},
-			body: JSON.stringify({
-				'model': model,
-				'temperature': temperature,
-				'messages': messages,
-				'stream': true
-			})
-		});
+	// Removed OpenAI API method - now using Claude exclusively via backend
+
+	// Claude generation method
+	private async generateWithClaude(query: string, systemPrompt: string): Promise<any> {
+		const response = await fetch(
+			`${this.settings.backendUrl}/generate`,
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					query,
+					context_strategy: this.settings.contextStrategy,
+					system_prompt: systemPrompt,
+					temperature: 0.7,
+					model: this.settings.claudeModel,
+					max_tokens: 4000,
+					max_context_tokens: this.settings.maxContextTokens,
+					include_full_docs: this.settings.contextStrategy === 'full_docs'
+				})
+			}
+		);
+		
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Claude generation failed: ${response.statusText} - ${errorText}`);
+		}
+		
+		const data = await response.json();
+		
+		// Show generation time and context info if enabled
+		if (this.settings.showGenerationTime) {
+			console.log(`Claude generation: ${data.generation_time?.toFixed(2)}s | Context: ${data.context_used} | Tokens: ${data.tokens_used}`);
+		}
+		
+		return data;
+	}
+
+	private async generateWithClaudeStreaming(
+		query: string,
+		systemPrompt: string,
+		editor: Editor,
+		statusBarItemEl: HTMLElement
+	): Promise<void> {
+		const response = await fetch(
+			`${this.settings.backendUrl}/generate_streaming`,
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					query,
+					context_strategy: this.settings.contextStrategy,
+					system_prompt: systemPrompt,
+					temperature: 0.7,
+					model: this.settings.claudeModel,
+					max_tokens: 4000,
+					max_context_tokens: this.settings.maxContextTokens
+				})
+			}
+		);
+		
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Claude streaming failed: ${response.statusText} - ${errorText}`);
+		}
+		
+		const reader = response.body?.getReader();
+		if (!reader) {
+			throw new Error('No response body reader available');
+		}
+		
+		const decoder = new TextDecoder();
+		let buffer = '';
+		
+		while (true) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			
+			// Process all complete lines
+			for (let i = 0; i < lines.length - 1; i++) {
+				const line = lines[i].trim();
+				if (line.startsWith('data: ')) {
+					try {
+						const data = JSON.parse(line.slice(6));
+						if (data.content) {
+							editor.replaceSelection(data.content);
+						}
+						if (data.done) {
+							statusBarItemEl.setText('✅ Claude generation complete!');
+						}
+					} catch (e) {
+						// Ignore parse errors for incomplete JSON
+					}
+				}
+			}
+			
+			// Keep the last incomplete line in the buffer
+			buffer = lines[lines.length - 1];
+		}
 	}
 
 	async onload() {
@@ -125,50 +226,54 @@ export default class CopilotPlugin extends Plugin {
 			editorCallback: async (editor: Editor, view: MarkdownView) => {
 				const selection = editor.getSelection();
 				const query = selection.replace(/[^a-z0-9 ]/gi, '');
-				statusBarItemEl.setText('Running Copilot...');
+				statusBarItemEl.setText('🔍 Retrieving context with Claude...');
 
-				// Retrieve relevant chunks from the server
-				const restResponse = await fetch(`http://0.0.0.0:8000/get_chunks?query=${encodeURIComponent(query)}`);
-				console.log('response', restResponse);
-				if (!restResponse.ok) {
-					console.error('An error occurred while fetching chunks', await restResponse.text());
-					statusBarItemEl.setText('ERROR: No response from retrieval API');
-					return;
-				}
+				try {
+					// Retrieve optimized context from the server
+					const contextResponse = await fetch(
+						`${this.settings.backendUrl}/get_context?` + 
+						`query=${encodeURIComponent(query)}&` +
+						`strategy=${this.settings.contextStrategy}&` +
+						`max_tokens=${this.settings.maxContextTokens}`
+					);
+					
+					if (!contextResponse.ok) {
+						console.error('Failed to fetch context', await contextResponse.text());
+						statusBarItemEl.setText('❌ Failed to retrieve context');
+						return;
+					}
 
-				const restData = await restResponse.json();
-				const retrievedDocs = [];
-				const relevantContent = [];
-				for (let i = 0; i < restData.length; i++) {
-					// Assuming ttile and chunk keys are always present in each dictionary
-					retrievedDocs.push(`[[${restData[i].title}]]\n\n${restData[i].chunk}`);
-					relevantContent.push(`Title: ${restData[i].title}\nContext: ${restData[i].chunk}\n`);
-				}
-				const retrievedDocsDisplay = retrievedDocs.join('\n---\n');
-				console.log(`PARSED RETRIEVED DOCS: \n\n${retrievedDocsDisplay}`);
+					const contextData = await contextResponse.json();
+					const { chunks, metadata } = contextData;
+					
+					// Display retrieved docs
+					const retrievedDocs = chunks.map((item: any) => {
+						if (item.type === 'full_document') {
+							return `📄 [[${item.title}]] (Full Document)\n\n${item.content.substring(0, 500)}...`;
+						} else {
+							return `[[${item.title}]]\n\n${item.content}`;
+						}
+					});
+					const retrievedDocsDisplay = retrievedDocs.join('\n---\n');
+					
+					console.log(`Context: ${metadata.strategy} | ${metadata.documents_included.length} docs | ${metadata.tokens_used} tokens`);
+					this.openNewPane(retrievedDocsDisplay);
 
-				this.openNewPane(retrievedDocsDisplay);
-
-				// Create user content
-				const user_content = `Section heading: ${query}\n\n${relevantContent.join('---\n')}\n\nDraft:`;
-				console.log(`USER CONTENT:\n\n${user_content}`);
-
-				// Send messages to OpenAI
-				const messages = [
-					{ 'role': 'system', 'content': this.settings.systemContentDraftSection },
-					{ 'role': 'user', 'content': user_content }
-				]
-				const response = await this.queryLLM(messages, this.settings.model, 0.7);
-
-				if (!response.ok) {
-					const errorData = await response.json();
-					console.error('An error occurred', errorData);
-					statusBarItemEl.setText('ERROR: No response from LLM API');
-				} else {
-					const reader = response.body?.getReader();
+					// Use Claude for generation
+					statusBarItemEl.setText('🤖 Claude is thinking...');
+					
+					// Use simulated streaming for better UX
 					editor.replaceSelection(selection + '\n\n');
-
-					await parseStream(reader, editor);
+					await this.generateWithClaudeStreaming(
+						query,
+						this.settings.systemContentDraftSection,
+						editor,
+						statusBarItemEl
+					);
+					
+				} catch (error) {
+					console.error('Generation error:', error);
+					statusBarItemEl.setText('❌ Generation failed');
 				}
 			}
 		});
@@ -295,60 +400,140 @@ class CopilotSettingTab extends PluginSettingTab {
 
 		containerEl.createEl('h2', { text: 'Settings for Obsidian Copilot' });
 
+		// Backend Selection
+		containerEl.createEl('h3', { text: 'Backend Configuration' });
+		
 		new Setting(containerEl)
-			.setName('OpenAI API Key')
-			.setDesc('Enter your OpenAI API key')
-			.addText(text => text
-				.setPlaceholder('API Key')
-				.setValue(this.plugin.settings.apiKey)
+			.setName('Use Claude Backend')
+			.setDesc('Use Claude Code CLI instead of OpenAI API for generation. Requires Claude Code installed on backend server.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.useClaudeBackend)
 				.onChange(async (value) => {
-					this.plugin.settings.apiKey = value;
+					this.plugin.settings.useClaudeBackend = value;
 					await this.plugin.saveSettings();
+					// Refresh display to show/hide relevant settings
+					this.display();
 				}));
 
 		new Setting(containerEl)
-			.setName('Model Name')
-			.setDesc('Enter the model used for generation')
+			.setName('Backend URL')
+			.setDesc('URL for the FastAPI backend server (e.g., http://localhost:8000)')
 			.addText(text => text
-				.setPlaceholder('Model name')
-				.setValue(this.plugin.settings.model)
+				.setPlaceholder('http://localhost:8000')
+				.setValue(this.plugin.settings.backendUrl)
 				.onChange(async (value) => {
-					this.plugin.settings.model = value;
+					this.plugin.settings.backendUrl = value;
 					await this.plugin.saveSettings();
 				}));
+
+		// Claude-specific settings (only show if Claude backend is enabled)
+		if (this.plugin.settings.useClaudeBackend) {
+			containerEl.createEl('h3', { text: 'Claude Settings' });
+			
+			new Setting(containerEl)
+				.setName('Claude Model')
+				.setDesc('Claude model to use for generation')
+				.addDropdown(dropdown => dropdown
+					.addOption('claude-3-5-sonnet-20241022', 'Claude 3.5 Sonnet')
+					.addOption('claude-3-opus-20240229', 'Claude 3 Opus')
+					.addOption('claude-3-haiku-20240307', 'Claude 3 Haiku')
+					.setValue(this.plugin.settings.claudeModel)
+					.onChange(async (value) => {
+						this.plugin.settings.claudeModel = value;
+						await this.plugin.saveSettings();
+					}));
+
+			new Setting(containerEl)
+				.setName('Max Context Tokens')
+				.setDesc('Maximum number of tokens for Claude context (up to 200000)')
+				.addText(text => text
+					.setPlaceholder('100000')
+					.setValue(String(this.plugin.settings.maxContextTokens))
+					.onChange(async (value) => {
+						const num = parseInt(value);
+						if (!isNaN(num) && num > 0 && num <= 200000) {
+							this.plugin.settings.maxContextTokens = num;
+							await this.plugin.saveSettings();
+						}
+					}));
+
+			new Setting(containerEl)
+				.setName('Show Generation Time')
+				.setDesc('Display how long Claude takes to generate responses in the console')
+				.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.showGenerationTime)
+					.onChange(async (value) => {
+						this.plugin.settings.showGenerationTime = value;
+						await this.plugin.saveSettings();
+					}));
+		}
+
+		// OpenAI settings (only show if OpenAI backend is enabled)
+		if (!this.plugin.settings.useClaudeBackend) {
+			containerEl.createEl('h3', { text: 'OpenAI Settings' });
+			
+			new Setting(containerEl)
+				.setName('OpenAI API Key')
+				.setDesc('Enter your OpenAI API key')
+				.addText(text => text
+					.setPlaceholder('sk-...')
+					.setValue(this.plugin.settings.apiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.apiKey = value;
+						await this.plugin.saveSettings();
+					}));
+
+			new Setting(containerEl)
+				.setName('OpenAI Model')
+				.setDesc('OpenAI model to use for generation')
+				.addDropdown(dropdown => dropdown
+					.addOption('gpt-3.5-turbo', 'GPT-3.5 Turbo')
+					.addOption('gpt-4', 'GPT-4')
+					.addOption('gpt-4-turbo-preview', 'GPT-4 Turbo')
+					.setValue(this.plugin.settings.model)
+					.onChange(async (value) => {
+						this.plugin.settings.model = value;
+						await this.plugin.saveSettings();
+					}));
+		}
+
+		// System Prompts (shown for both backends)
+		containerEl.createEl('h3', { text: 'System Prompts' });
 
 		new Setting(containerEl)
 			.setName('System Prompt: Draft Section')
 			.setDesc('Define the prompt used for drafting a section with context')
-			.addText(text => text
+			.addTextArea(text => text
 				.setPlaceholder('Prompt to draft a section')
 				.setValue(this.plugin.settings.systemContentDraftSection)
 				.onChange(async (value) => {
 					this.plugin.settings.systemContentDraftSection = value;
 					await this.plugin.saveSettings();
-				}));
+				})
+				.inputEl.rows = 4);
 
 		new Setting(containerEl)
 			.setName('System Prompt: Draft Section (without context)')
 			.setDesc('Define the prompt used for drafting a section without context')
-			.addText(text => text
+			.addTextArea(text => text
 				.setPlaceholder('Prompt to draft a section (without context)')
 				.setValue(this.plugin.settings.systemContentDraftSectionNoContext)
 				.onChange(async (value) => {
 					this.plugin.settings.systemContentDraftSectionNoContext = value;
 					await this.plugin.saveSettings();
-				}));
-
+				})
+				.inputEl.rows = 4);
 
 		new Setting(containerEl)
 			.setName('System Prompt: Reflect on the week')
-			.setDesc('Define the prompt used` to reflect on the week')
-			.addText(text => text
+			.setDesc('Define the prompt used to reflect on the week')
+			.addTextArea(text => text
 				.setPlaceholder('Prompt to reflect on the week')
 				.setValue(this.plugin.settings.systemContentReflectWeek)
 				.onChange(async (value) => {
 					this.plugin.settings.systemContentReflectWeek = value;
 					await this.plugin.saveSettings();
-				}));
+				})
+				.inputEl.rows = 4);
 	}
 }
