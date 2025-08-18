@@ -1,0 +1,250 @@
+# Agent OS Configuration for Obsidian Copilot Claude-Exclusive Edition
+# This file defines the autonomous agents that enhance your knowledge synthesis capabilities
+
+version: 1.0.0
+last_updated: 2025-08-18
+
+# Global agent settings
+global:
+  enabled: true
+  max_concurrent_agents: 3
+  default_timeout: 60  # seconds
+  claude_model: claude-3-5-sonnet-20241022
+  max_context_tokens: 150000
+
+# Agent definitions
+agents:
+  # Autonomous vault analyzer - runs daily to analyze your knowledge base
+  vault-analyzer:
+    type: autonomous
+    enabled: true
+    description: "Continuously analyzes vault for patterns, connections, and insights"
+    trigger:
+      type: schedule
+      interval: daily
+      time: "02:00"  # Run at 2 AM
+    capabilities:
+      - analyze_new_notes
+      - detect_emerging_themes
+      - identify_knowledge_gaps
+      - suggest_connections
+      - generate_daily_summary
+    configuration:
+      max_documents_per_run: 100
+      min_relevance_score: 0.7
+      analysis_depth: 3
+      output_format: markdown
+      save_to: "Agent Reports/Daily Analysis"
+    prompts:
+      analysis: |
+        Analyze the vault for new patterns and connections.
+        Focus on notes modified in the last 24 hours.
+        Identify emerging themes and knowledge gaps.
+      summary: |
+        Create a concise summary of today's vault analysis.
+        Highlight key insights and actionable suggestions.
+
+  # Multi-document synthesis assistant
+  synthesis-assistant:
+    type: reactive
+    enabled: true
+    description: "Creates comprehensive syntheses from multiple documents"
+    trigger:
+      type: on_demand
+      commands:
+        - "agent:synthesize"
+        - "agent:create-summary"
+        - "agent:map-connections"
+    capabilities:
+      - multi_document_synthesis
+      - timeline_construction
+      - argument_mapping
+      - concept_hierarchy
+      - contradiction_detection
+    configuration:
+      min_documents: 2
+      max_documents: 50
+      synthesis_strategies:
+        - chronological
+        - thematic
+        - argumentative
+        - comparative
+      output_templates:
+        summary: "templates/synthesis-summary.md"
+        outline: "templates/synthesis-outline.md"
+        connections: "templates/synthesis-connections.md"
+
+  # Context optimization agent
+  context-optimizer:
+    type: background
+    enabled: true
+    description: "Optimizes retrieval and context building for better performance"
+    trigger:
+      type: continuous
+      check_interval: 300  # Check every 5 minutes
+      conditions:
+        - cache_size_exceeded
+        - performance_degradation
+        - new_documents_detected
+    capabilities:
+      - optimize_retrieval_indices
+      - manage_context_cache
+      - tune_relevance_scoring
+      - precompute_common_queries
+      - compress_contexts
+    configuration:
+      cache_size_mb: 500
+      cache_ttl_hours: 24
+      optimization_threshold: 0.8
+      compression_ratio: 0.7
+      index_rebuild_frequency: weekly
+    strategies:
+      - lru_cache_eviction
+      - frequency_based_caching
+      - semantic_clustering
+      - query_pattern_recognition
+
+  # Proactive suggestion agent
+  suggestion-engine:
+    type: proactive
+    enabled: true
+    description: "Provides proactive suggestions based on current context"
+    trigger:
+      type: context_aware
+      monitors:
+        - active_note_changes
+        - query_patterns
+        - navigation_history
+      debounce_ms: 2000
+    capabilities:
+      - suggest_related_notes
+      - recommend_analyses
+      - propose_connections
+      - identify_missing_links
+      - suggest_queries
+    configuration:
+      max_suggestions: 5
+      confidence_threshold: 0.75
+      suggestion_cooldown_minutes: 10
+      personalization_enabled: true
+    learning:
+      track_accepted_suggestions: true
+      adapt_to_preferences: true
+      feedback_weight: 0.3
+
+  # Research assistant agent
+  research-assistant:
+    type: interactive
+    enabled: true
+    description: "Helps with deep research tasks across the vault"
+    trigger:
+      type: on_demand
+      commands:
+        - "agent:research"
+        - "agent:deep-dive"
+        - "agent:literature-review"
+    capabilities:
+      - literature_review
+      - citation_tracking
+      - source_verification
+      - hypothesis_testing
+      - evidence_gathering
+    configuration:
+      research_depth: 5
+      citation_style: "markdown"
+      evidence_threshold: 3  # Minimum sources for claims
+      cross_reference_enabled: true
+    modes:
+      exploratory:
+        focus: "breadth"
+        max_documents: 100
+        time_limit_minutes: 30
+      focused:
+        focus: "depth"
+        max_documents: 20
+        time_limit_minutes: 15
+      comprehensive:
+        focus: "exhaustive"
+        max_documents: 200
+        time_limit_minutes: 60
+
+# Agent interaction rules
+interactions:
+  coordination:
+    allow_parallel_execution: true
+    max_parallel_agents: 2
+    conflict_resolution: "priority_based"
+  
+  communication:
+    inter_agent_messaging: true
+    shared_memory: true
+    result_sharing: true
+  
+  priorities:
+    1: context-optimizer  # Highest priority
+    2: vault-analyzer
+    3: suggestion-engine
+    4: synthesis-assistant
+    5: research-assistant  # Lowest priority
+
+# Learning and adaptation settings
+learning:
+  enabled: true
+  storage_path: ".agent-os/memory/patterns.json"
+  retention_days: 90
+  
+  patterns_to_track:
+    - query_sequences
+    - document_access_patterns
+    - synthesis_preferences
+    - rejection_reasons
+    - success_metrics
+  
+  adaptation_strategies:
+    - relevance_tuning
+    - context_size_optimization
+    - suggestion_personalization
+    - query_expansion_learning
+
+# Performance monitoring
+monitoring:
+  enabled: true
+  metrics_path: ".agent-os/metrics/"
+  
+  track:
+    - agent_execution_time
+    - success_rate
+    - user_satisfaction
+    - resource_usage
+    - cache_hit_rate
+  
+  alerts:
+    slow_execution:
+      threshold_seconds: 30
+      action: "log_warning"
+    
+    high_memory_usage:
+      threshold_mb: 1000
+      action: "throttle_agents"
+    
+    low_success_rate:
+      threshold_percent: 60
+      action: "disable_agent"
+
+# Error handling
+error_handling:
+  retry_attempts: 3
+  retry_delay_seconds: 5
+  
+  fallback_strategies:
+    vault-analyzer: "skip_until_next_schedule"
+    synthesis-assistant: "return_partial_results"
+    context-optimizer: "use_cached_context"
+    suggestion-engine: "disable_temporarily"
+    research-assistant: "simplify_query"
+  
+  logging:
+    level: "INFO"
+    path: ".agent-os/logs/"
+    rotation: "daily"
+    retention_days: 30

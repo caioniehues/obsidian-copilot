@@ -12,3 +12,5 @@ uvicorn[standard]==0.22.0
 aiofiles==23.2.1
 redis==5.0.1  # For advanced caching
 aioredis==2.0.1  # Async Redis support
+apscheduler==3.10.4  # For agent scheduling
+pyyaml==6.0.1  # For YAML configuration

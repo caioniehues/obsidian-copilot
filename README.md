@@ -1,242 +1,346 @@
-# Obsidian Copilot - Claude-Exclusive Edition (Private Fork)
+# Obsidian Copilot: Claude-Exclusive Edition with Agent OS
 
-**⚠️ PRIVATE CUSTOM IMPLEMENTATION**  
-This is a private fork optimized exclusively for Claude Code CLI, with all OpenAI dependencies removed.  
-Not intended for public use. For the original multi-backend version, see [eugeneyan/obsidian-copilot](https://github.com/eugeneyan/obsidian-copilot).
+> **⚡ PRIVATE CUSTOM IMPLEMENTATION**  
+> This is a private fork optimized exclusively for Claude's 200K context window with autonomous Agent OS capabilities.  
+> Not intended for public use. Original project: [obsidian-copilot](https://github.com/logancyang/obsidian-copilot)
 
-![Claude Exclusive](https://img.shields.io/badge/Claude-Exclusive-blue)
-![Context Window](https://img.shields.io/badge/Context-200K_tokens-green)
-![Private Fork](https://img.shields.io/badge/Fork-Private-red)
-![Local Processing](https://img.shields.io/badge/Processing-Local-orange)
+## 🚀 What Makes This Special
 
-## 🚀 Features
+This isn't just another RAG plugin. It's an **intelligent knowledge companion** that:
 
-### Core Capabilities
-- **🧠 200K Context Window** - Process entire documents, not just chunks
-- **📚 Vault-Wide Analysis** - Analyze relationships across 50+ documents simultaneously
-- **🔄 Multi-Document Synthesis** - Create comprehensive summaries from complete notes
-- **🎯 Context Strategies** - Choose between full documents, smart chunks, or hierarchical processing
-- **💻 Local Processing** - Uses Claude Code CLI for complete privacy
-- **⚡ Optimized Architecture** - 40% less complex than dual-backend version
+- **Leverages Claude's 200K Context Window**: Analyze entire documents, not just fragments
+- **Autonomous Agents**: 5 specialized agents that continuously analyze, optimize, and learn from your vault
+- **Semantic Memory**: Agents build knowledge graphs using Basic Memory integration
+- **Proactive Intelligence**: Get suggestions before you ask, discover patterns you didn't know existed
+- **Privacy-First**: All processing happens locally, only Claude API calls leave your machine
 
-### New Claude-Exclusive Endpoints
-- `/analyze_vault` - Perform comprehensive vault analysis on any topic
-- `/synthesize_notes` - Create summaries, outlines, or connection maps from multiple notes
-- `/generate` - Optimized generation with context strategies
-- `/get_context` - Smart context retrieval with multiple strategies
+## 🤖 Agent OS: Your Knowledge Companions
+
+### The Agent Team
+
+| Agent | Type | Purpose | Trigger |
+|-------|------|---------|---------|
+| **Vault Analyzer** | Autonomous | Daily analysis of your entire vault for patterns and insights | 2 AM daily |
+| **Synthesis Assistant** | Reactive | Creates comprehensive syntheses from multiple documents | On-demand |
+| **Context Optimizer** | Background | Continuously optimizes retrieval performance and caching | Every 5 min |
+| **Suggestion Engine** | Proactive | Provides real-time suggestions based on context | Context-aware |
+| **Research Assistant** | Interactive | Conducts deep research across your knowledge base | On-demand |
+
+### What Agents Can Do
+
+- **Learn Your Patterns**: Track how you work and optimize accordingly
+- **Share Knowledge**: Agents share insights with each other through Basic Memory
+- **Improve Over Time**: Every interaction makes them smarter
+- **Work Autonomously**: Run scheduled analyses while you sleep
+- **Provide Insights**: Surface connections and patterns you might miss
 
 ## 📋 Prerequisites
 
-- **Claude Code CLI** installed and configured
-- **Obsidian** with community plugins enabled
-- **Docker** or **Podman** for containerized deployment
-- **Python 3.9+** (if running locally)
-- At least 8GB RAM recommended for optimal performance
+- **Obsidian** (v0.12.0+)
+- **Docker** or **Podman**
+- **Claude API Access** (via Claude Code CLI)
+- **Basic Memory MCP Server** (for agent memory)
+- **Python 3.11+**
+- **Node.js 18+**
 
 ## 🛠️ Installation
 
-### Quick Start
+### 1. Clone and Setup Environment
 
-1. **Clone this repository**
-   ```bash
-   git clone https://github.com/caioniehues/obsidian-copilot.git
-   cd obsidian-copilot
-   ```
+```bash
+git clone https://github.com/yourusername/obsidian-copilot.git
+cd obsidian-copilot
 
-2. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your paths and settings
-   ```
+# Set required environment variables
+export OBSIDIAN_PATH=/path/to/your/vault/  # Note: trailing slash required!
+export TRANSFORMER_CACHE=/path/to/.cache/huggingface/hub
+export CLAUDE_API_KEY=your-claude-api-key  # If using direct API
+```
 
-3. **Set required environment variables**
-   ```bash
-   export OBSIDIAN_PATH=/path/to/your/obsidian-vault/  # Trailing slash required!
-   export TRANSFORMER_CACHE=/path/to/.cache/huggingface/hub
-   export CLAUDE_CODE_PATH=/usr/local/bin/claude  # Or your Claude CLI path
-   ```
+### 2. Build and Start Services
 
-4. **Build and start services**
-   ```bash
-   # Build Docker image
-   make build
-   
-   # Start OpenSearch
-   make opensearch
-   
-   # In another terminal, build indices
-   make build-artifacts
-   
-   # Start the backend
-   make run
-   ```
+```bash
+# Build Docker image
+make build
 
-5. **Install Obsidian plugin**
-   ```bash
-   make install-plugin
-   ```
-   Then enable "Copilot" in Obsidian's Community Plugins settings.
+# Start OpenSearch (for RAG)
+make opensearch
+
+# Wait 30 seconds for OpenSearch to initialize, then in another terminal:
+make build-artifacts
+
+# Start the backend with Agent OS
+make run
+```
+
+### 3. Install Obsidian Plugin
+
+```bash
+# Build and install plugin
+cd plugin
+npm install
+npm run build
+cd ..
+make install-plugin
+
+# Enable the plugin in Obsidian settings
+```
+
+### 4. Configure Basic Memory (for Agent Memory)
+
+Ensure Basic Memory MCP server is running and accessible. Agents will use it to store and retrieve memories.
 
 ## ⚙️ Configuration
 
-### Context Strategies
+### Plugin Settings (in Obsidian)
 
-Choose your context strategy based on your use case:
+```javascript
+{
+  "backendUrl": "http://localhost:8000",
+  "claudeModel": "claude-3-5-sonnet-20241022",
+  "contextStrategy": "smart_chunks",  // or "full_docs", "hierarchical"
+  "maxContextTokens": 150000,
+  "showGenerationTime": true
+}
+```
 
-| Strategy | Description | Best For | Token Usage |
-|----------|-------------|----------|-------------|
-| `full_docs` | Send complete documents | Comprehensive understanding | High (up to 200K) |
-| `smart_chunks` | Intelligent chunking | Balanced performance | Medium (50-100K) |
-| `hierarchical` | Summaries + details | Large vaults | Optimized |
+### Agent Configuration
 
-### Environment Variables
+Edit `.agent-os/agents/config.yaml` to customize agent behavior:
 
-```bash
-# Required
-OBSIDIAN_PATH=/path/to/vault/          # Your Obsidian vault path
-TRANSFORMER_CACHE=/path/to/cache       # HuggingFace model cache
-CLAUDE_CODE_PATH=/usr/local/bin/claude # Claude CLI location
-
-# Optional Configuration
-CLAUDE_MODEL=claude-3-5-sonnet-20241022  # Claude model to use
-MAX_CONTEXT_TOKENS=100000                # Maximum context (up to 200000)
-CONTEXT_STRATEGY=smart_chunks            # Default context strategy
+```yaml
+agents:
+  vault-analyzer:
+    enabled: true
+    trigger:
+      type: schedule
+      interval: daily
+      time: "02:00"  # Run at 2 AM
 ```
 
 ## 🎯 Usage
 
-### Basic Document Drafting
-1. Select text in Obsidian (your section heading)
-2. Run command: "Copilot: Draft Section"
-3. Claude analyzes your vault and generates content
+### Basic RAG Queries
 
-### Vault-Wide Analysis
-```bash
-curl -X POST http://localhost:8000/analyze_vault \
-  -H "Content-Type: application/json" \
-  -d '{
-    "topic": "machine learning",
-    "depth": 3,
-    "max_documents": 50
-  }'
+1. **In Obsidian**: Type `##` followed by your question
+2. **Context Building**: The system retrieves relevant documents
+3. **Claude Analysis**: Sends context to Claude for analysis
+4. **Response**: Get comprehensive answers leveraging your entire vault
+
+### Agent Commands
+
+```markdown
+## agent:synthesize
+Create a synthesis of my notes on [topic]
+
+## agent:research
+Deep dive into [research question]
+
+## agent:analyze-vault
+Run vault analysis now
 ```
 
-### Multi-Document Synthesis
-```bash
-curl -X POST http://localhost:8000/synthesize_notes \
-  -H "Content-Type: application/json" \
-  -d '{
-    "note_paths": ["note1.md", "note2.md", "note3.md"],
-    "synthesis_type": "summary"
-  }'
-```
+### Context Strategies
+
+- **`full_docs`**: Include complete documents (best for comprehensive analysis)
+- **`smart_chunks`**: Intelligent chunking with relevance scoring (balanced)
+- **`hierarchical`**: Build from most to least relevant (memory efficient)
 
 ## 🏗️ Architecture
 
-### System Overview
+### System Components
+
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Obsidian       │────▶│  FastAPI Backend │────▶│  Claude CLI     │
-│  Plugin (TS)    │     │  (Python)        │     │  (Local)        │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                               │
-                    ┌──────────┴──────────┐
-                    ▼                     ▼
-            ┌──────────────┐     ┌──────────────┐
-            │  OpenSearch  │     │  Semantic    │
-            │  (BM25)      │     │  Index       │
-            └──────────────┘     └──────────────┘
-```
-
-### Context Flow
-1. **Query** → Retrieve relevant documents/chunks
-2. **Strategy** → Apply context strategy (full/chunks/hierarchical)
-3. **Claude** → Process with 200K context window
-4. **Response** → Stream back to Obsidian
-
-## 📊 Performance
-
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Context Window | 200,000 tokens | ~500 pages of text |
-| Documents per Query | 50+ | Full documents |
-| Generation Time | 5-15 seconds | Depends on context size |
-| Retrieval Time | <1 second | Dual index system |
-| Memory Usage | 2-4 GB | With models loaded |
-
-## 🔧 Advanced Features
-
-### Custom Context Strategies
-Configure in plugin settings or via API:
-```json
-{
-  "context_strategy": "full_docs",
-  "max_context_tokens": 150000,
-  "include_full_docs": true
-}
+┌─────────────────────────────────────────────────┐
+│                   Obsidian UI                   │
+│                  (TypeScript)                   │
+└─────────────────┬───────────────────────────────┘
+                  │
+┌─────────────────▼───────────────────────────────┐
+│              FastAPI Backend                    │
+│                 (Python)                        │
+├─────────────────────────────────────────────────┤
+│  • RAG Engine (OpenSearch + Semantic Search)   │
+│  • Claude Integration (CLI)                    │
+│  • Agent OS (5 Autonomous Agents)              │
+│  • Basic Memory Integration                    │
+└─────────────────────────────────────────────────┘
 ```
 
-### Batch Processing
-Process multiple queries efficiently:
-```python
-# See API_DOCUMENTATION.md for batch endpoints
+### Agent Memory Structure
+
 ```
+agent-os/memory/
+├── patterns/        # Learned patterns
+├── preferences/     # User preferences
+├── executions/      # Execution history
+├── insights/        # Generated insights
+└── feedback/        # User feedback
+```
+
+## 📡 API Endpoints
+
+### Core Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/generate` | POST | Generate response with Claude |
+| `/query` | POST | RAG query (backward compatibility) |
+| `/analyze_vault` | POST | Comprehensive vault analysis |
+| `/synthesize_notes` | POST | Multi-document synthesis |
+| `/get_context` | GET | Retrieve built context |
+
+### Agent Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/agents/list` | GET | List all agents |
+| `/agents/{name}/status` | GET | Get agent status |
+| `/agents/{name}/execute` | POST | Execute agent |
+| `/agents/{name}/history` | GET | Get execution history |
+| `/scheduler/info` | GET | Get schedule information |
+
+## 🧠 Agent Capabilities
+
+### Vault Analyzer
+- Daily pattern detection
+- Knowledge gap identification
+- Connection discovery
+- Trend analysis
+- Quality assessment
+
+### Synthesis Assistant
+- Thematic synthesis
+- Chronological organization
+- Argumentative synthesis
+- Comparative analysis
+- Contradiction detection
+
+### Context Optimizer
+- Index optimization
+- Cache management
+- Query pattern learning
+- Performance tuning
+- Token allocation
+
+### Suggestion Engine
+- Related note discovery
+- Query improvements
+- Workflow enhancements
+- Knowledge gap alerts
+- Proactive insights
+
+### Research Assistant
+- Literature review
+- Evidence gathering
+- Hypothesis testing
+- Citation tracking
+- Comprehensive reports
+
+## 🔧 Development
+
+### Local Development
+
+```bash
+# Backend development with hot reload
+make app-local
+
+# Plugin development with auto-rebuild
+cd plugin && npm run dev
+
+# Run tests
+make test
+```
+
+### Adding New Agents
+
+1. Define agent in `.agent-os/agents/config.yaml`
+2. Create instructions in `.agent-os/instructions/agents/`
+3. Implement agent class in `src/agents.py`
+4. Add scheduler configuration if needed
+
+## 📊 Performance Optimization
 
 ### Caching
-Redis caching available for frequent queries:
+- Redis for query caching
+- Local context cache
+- Precomputed common queries
+
+### Indexing
+- Incremental index updates
+- Parallel document processing
+- Optimized chunk sizes
+
+### Context Strategies
+- Smart token allocation
+- Relevance-based prioritization
+- Dynamic context adjustment
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**OpenSearch won't start**
 ```bash
-# Enable in docker-compose.yml
+# Check if port 9200 is already in use
+lsof -i :9200
+# Kill the process or change the port
 ```
 
-## 📝 Documentation
+**Indices not building**
+```bash
+# Ensure OBSIDIAN_PATH has trailing slash
+echo $OBSIDIAN_PATH  # Should end with /
+# Rebuild indices
+make build-artifacts
+```
 
-- [**CLAUDE_FEATURES.md**](./CLAUDE_FEATURES.md) - Detailed Claude-specific capabilities
-- [**API_DOCUMENTATION.md**](./API_DOCUMENTATION.md) - Complete API reference
-- [**SETUP_GUIDE.md**](./SETUP_GUIDE.md) - Detailed installation instructions
-- [**ARCHITECTURE.md**](./ARCHITECTURE.md) - Technical deep-dive
-- [**EXAMPLES.md**](./EXAMPLES.md) - Usage examples and patterns
-- [**TROUBLESHOOTING.md**](./TROUBLESHOOTING.md) - Common issues and solutions
+**Agent not executing**
+```bash
+# Check agent status
+curl http://localhost:8000/agents/vault-analyzer/status
+# Check scheduler
+curl http://localhost:8000/scheduler/info
+```
 
-## 🚨 Important Notes
+## 📝 Memory and Learning
 
-### This is a Private Fork
-- **Not backward compatible** with OpenAI configurations
-- **Requires Claude Code CLI** - No API key support
-- **Optimized for single backend** - Simpler but less flexible
-- **Breaking changes** from original repository
+Agents store memories in your Obsidian vault via Basic Memory:
 
-### Differences from Original
-| Feature | Original | This Fork |
-|---------|----------|-----------|
-| OpenAI Support | ✅ | ❌ Removed |
-| Claude Support | ✅ | ✅ Exclusive |
-| Backend Options | 2 | 1 |
-| Max Context | 16K | 200K |
-| Complexity | Higher | 40% Lower |
-| Vault Analysis | ❌ | ✅ |
-| Multi-Doc Synthesis | ❌ | ✅ |
+```markdown
+# Pattern Memory
+**Agent**: vault-analyzer
+**Type**: pattern
+## Observations
+- [pattern] Detected pattern: Daily journaling
+- [frequency] Occurrence count: 30
+- [confidence] Confidence level: 0.95
+```
 
-## 🤝 Attribution
+This creates a searchable knowledge graph of agent learning that improves over time.
 
-This is a fork of [eugeneyan/obsidian-copilot](https://github.com/eugeneyan/obsidian-copilot), heavily modified for Claude-exclusive operation. Original concept and retrieval system architecture by Eugene Yan.
+## 🔒 Privacy and Security
 
-## ⚖️ License
+- **Local Processing**: All indexing and retrieval happens locally
+- **No Data Collection**: No telemetry or usage tracking
+- **API Security**: Only Claude API calls leave your machine
+- **Vault Integrity**: Read-only access to your notes
 
-Maintained under original MIT License. See [LICENSE](./LICENSE) file.
+## 🤝 Contributing
 
-## 🔒 Privacy
+This is a private implementation. For the original project, see [obsidian-copilot](https://github.com/logancyang/obsidian-copilot).
 
-- **Local Processing**: All Claude processing via local CLI
-- **No API Keys**: No credentials transmitted
-- **Your Data Stays Local**: Vault never leaves your machine
+## 📄 License
 
-## 📮 Support
+Private implementation based on MIT-licensed original.
 
-This is a private implementation. For issues:
-1. Check [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
-2. Review [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)
-3. See original project for general concepts
+## 🙏 Acknowledgments
+
+- Original [obsidian-copilot](https://github.com/logancyang/obsidian-copilot) by Logan Yang
+- Claude by Anthropic for the powerful LLM
+- Basic Memory for semantic knowledge management
+- OpenSearch for robust search capabilities
 
 ---
 
-**Built with Claude 🤖 | Optimized for 200K Context 🧠 | Private Fork 🔒**
+*Built with ❤️ for the Obsidian + Claude power user*
