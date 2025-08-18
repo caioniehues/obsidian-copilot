@@ -366,6 +366,58 @@ Generate practice questions
 Create comprehensive outline
 ```
 
+## Best Practices Summary
+
+**7-Point Success Checklist:**
+
+1. **Start Simple**: Use basic `##` queries first
+2. **Learn Agents**: Try each agent individually to understand capabilities
+3. **Find Your Flow**: Develop personal workflows that match your thinking
+4. **Review Learning**: Check agent memories weekly to see what they've learned
+5. **Provide Feedback**: Help agents learn your preferences through corrections
+6. **Experiment**: Try different strategies and commands regularly
+7. **Chain Operations**: Combine agents for powerful multi-step workflows
+
+## Understanding Agent Learning
+
+### What Agents Remember
+
+Agents continuously build memories to improve their service:
+
+```markdown
+# Search for agent memories in your vault:
+tag:#agent:vault-analyzer
+tag:#type:pattern
+tag:#type:insight
+tag:#type:preference
+```
+
+### Memory Structure Example
+
+```markdown
+# Pattern Memory
+**Agent**: vault-analyzer
+**Type**: pattern
+
+## Observations
+- [pattern] You frequently research AI ethics
+- [frequency] 15 times in last month
+- [confidence] 0.92
+
+## Relations
+- relates_to [[AI Research]]
+- influences [[Writing Topics]]
+```
+
+### How Memories Improve Performance
+
+- **Patterns** help predict your needs
+- **Preferences** customize responses to your style
+- **Insights** guide proactive suggestions
+- **Feedback** improves accuracy over time
+
+**Pro Tip**: The more you use the system, the smarter it gets. Agents learn from every interaction and share knowledge to better serve your needs.
+
 ---
 
-**Navigation**: [← Getting Started](./getting-started.md) | [Agent Commands →](./agent-commands.md)
+**Navigation**: [← Getting Started](./getting-started.md) | [Agent Commands →](./agent-commands.md) | [Advanced Features →](./advanced-features.md)

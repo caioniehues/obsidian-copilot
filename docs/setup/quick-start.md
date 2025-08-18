@@ -72,6 +72,6 @@ make stop-all       # Stop everything
 
 ## Next Steps
 
-- Full guide: [SETUP_GUIDE.md](./SETUP_GUIDE.md)
-- Usage: [USER_GUIDE.md](./USER_GUIDE.md)
-- Agents: [AGENTS.md](./AGENTS.md)
+- Full guide: [SETUP_GUIDE.md](./installation.md)
+- Usage: [USER_GUIDE.md](../usage/getting-started.md)
+- Agents: [AGENTS.md](../agents/overview.md)

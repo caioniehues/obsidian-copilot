@@ -267,6 +267,145 @@ Result: Complete architectural documentation with all details preserved.
 }
 ```
 
+## API Endpoint Specifications
+
+### Core Generation Endpoint
+
+#### `POST /query`
+Primary retrieval and generation endpoint.
+
+**Request Body:**
+```json
+{
+  "query": "string",                    // User's query
+  "context_strategy": "string",         // full_docs | smart_chunks | hierarchical
+  "max_context_tokens": "integer",      // Token limit (default: 100000)
+  "include_full_docs": "boolean",       // Include complete documents
+  "max_documents": "integer"            // Maximum documents to retrieve
+}
+```
+
+**Response:**
+```json
+{
+  "response": "string",                 // Generated content
+  "documents": ["array of strings"],    // Source documents used
+  "tokens_used": "integer",            // Actual tokens consumed
+  "generation_time": "float",          // Time in seconds
+  "context_strategy_used": "string"    // Strategy applied
+}
+```
+
+### Advanced Analysis Endpoints
+
+#### `POST /analyze_vault`
+Comprehensive vault analysis across multiple documents.
+
+**Request Body:**
+```json
+{
+  "topic": "string",                   // Analysis focus topic
+  "depth": "integer",                  // Analysis depth (1-5)
+  "max_documents": "integer",          // Document limit
+  "include_patterns": "boolean",       // Include pattern analysis
+  "filter_by_tags": ["array"]         // Optional tag filters
+}
+```
+
+**Response:**
+```json
+{
+  "analysis": "string",                // Complete analysis
+  "documents_analyzed": "integer",     // Count of documents processed
+  "tokens_used": "integer",           // Token consumption
+  "generation_time": "float",         // Processing time
+  "documents": ["array"],             // Document paths
+  "patterns_found": ["array"],        // Identified patterns
+  "connections": ["array"]            // Document relationships
+}
+```
+
+#### `POST /synthesize_notes`
+Multi-document synthesis with various output formats.
+
+**Request Body:**
+```json
+{
+  "note_paths": ["array of strings"],  // Specific documents to synthesize
+  "synthesis_type": "string",          // summary | outline | connections
+  "output_format": "string",           // markdown | structured | narrative
+  "include_citations": "boolean",      // Add source citations
+  "max_output_tokens": "integer"       // Output length limit
+}
+```
+
+**Response:**
+```json
+{
+  "synthesized_content": "string",    // Generated synthesis
+  "synthesis_type": "string",         // Type used
+  "source_documents": ["array"],      // Documents processed
+  "tokens_used": "integer",           // Token consumption
+  "generation_time": "float",         // Processing time
+  "citations": ["array"]              // Source citations (if requested)
+}
+```
+
+### Configuration Endpoints
+
+#### `GET /config/strategies`
+Returns available context strategies and their configurations.
+
+**Response:**
+```json
+{
+  "strategies": {
+    "full_docs": {
+      "description": "Complete documents with full context",
+      "recommended_max_tokens": 150000,
+      "best_for": ["research", "deep analysis"]
+    },
+    "smart_chunks": {
+      "description": "Intelligent markdown-aware chunking",
+      "recommended_max_tokens": 100000,
+      "best_for": ["daily notes", "general usage"]
+    },
+    "hierarchical": {
+      "description": "Summary + detail combination",
+      "recommended_max_tokens": 100000,
+      "best_for": ["large vaults", "overview + detail"]
+    }
+  }
+}
+```
+
+#### `POST /config/optimize`
+Get optimized configuration recommendations based on vault characteristics.
+
+**Request Body:**
+```json
+{
+  "vault_size": "integer",             // Number of documents
+  "average_doc_size": "integer",       // Average document length
+  "use_case": "string",               // research | daily | mixed
+  "performance_preference": "string"   // speed | quality | balanced
+}
+```
+
+**Response:**
+```json
+{
+  "recommended_config": {
+    "context_strategy": "string",
+    "max_context_tokens": "integer",
+    "include_full_docs": "boolean",
+    "cache_strategy": "string"
+  },
+  "reasoning": "string",              // Why this configuration
+  "alternatives": ["array"]          // Alternative configurations
+}
+```
+
 ## Limitations and Considerations
 
 ### Current Limitations

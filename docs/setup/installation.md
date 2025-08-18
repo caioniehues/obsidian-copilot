@@ -65,7 +65,8 @@ nano .env  # or use your preferred editor
 # Path to your Obsidian vault (MUST end with /)
 OBSIDIAN_PATH=/Users/yourname/Documents/ObsidianVault/
 
-# Path for model cache
+# Path for AI model cache (stores the E5-small-v2 semantic search model)
+# This ~130 MB model enables intelligent note retrieval by understanding meaning, not just keywords
 TRANSFORMER_CACHE=/Users/yourname/.cache/huggingface/hub
 
 # Claude configuration (choose one)
@@ -88,6 +89,14 @@ CONTEXT_STRATEGY=smart_chunks
 CACHE_ENABLED=true
 MAX_CONCURRENT_AGENTS=3
 ```
+
+**📊 About Model Caching**: 
+The TRANSFORMER_CACHE stores the E5-small-v2 model used for semantic search. This model:
+- Downloads automatically on first use (~130 MB)
+- Converts your notes into mathematical vectors for similarity matching
+- Enables finding conceptually related notes (e.g., "productivity" finds notes about "efficiency", "GTD", "time management")
+- Only downloads once - cached for all future uses
+- Can be safely deleted and will re-download if needed
 
 ### Step 3: Build Docker Image
 
@@ -404,7 +413,7 @@ make update-indices
 
 ### Learn the Commands
 
-See [USER_GUIDE.md](./USER_GUIDE.md) for:
+See [USER_GUIDE.md](../usage/basic-usage.md) for:
 - All agent commands
 - Context strategies
 - Advanced features
@@ -440,8 +449,8 @@ make diagnose
 
 ### Resources
 
-- **User Guide**: [USER_GUIDE.md](./USER_GUIDE.md)
-- **Agent Documentation**: [AGENTS.md](./AGENTS.md)
+- **User Guide**: [USER_GUIDE.md](../usage/basic-usage.md)
+- **Agent Documentation**: [AGENTS.md](../agents/overview.md)
 - **API Reference**: [API.md](./API.md)
 - **GitHub Issues**: Report bugs or request features
 

@@ -453,6 +453,24 @@ Explain specific decision
 Show agent reasoning process
 ```
 
+### Following Up on Agent Responses
+
+After any agent response, you can:
+
+```markdown
+## explain
+Get more detail about the response
+
+## continue
+Continue the thought or analysis
+
+## refine with [new context]
+Refine response with additional information
+
+## synthesize this
+Create synthesis from the response content
+```
+
 ## Command Modifiers
 
 ### Universal Modifiers
@@ -518,4 +536,4 @@ curl http://localhost:8000/agents/vault-analyzer/history
 
 ---
 
-**Navigation**: [← Basic Usage](./basic-usage.md) | [Advanced Features →](./advanced.md)
+**Navigation**: [← Basic Usage](./basic-usage.md) | [Advanced Features →](./advanced-features.md)

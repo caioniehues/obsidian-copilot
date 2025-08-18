@@ -51,28 +51,27 @@ cd .. && make install-plugin
 
 Enable in Obsidian: Settings → Community Plugins → Obsidian Copilot
 
-## 📚 Documentation
+## 📚 Complete Documentation
 
-### Setup & Installation
-- 📋 [System Requirements](./docs/setup/requirements.md)
-- 🛠️ [Installation Guide](./docs/setup/installation.md)
-- ⚡ [Quick Start (5 min)](./docs/setup/quick-start.md)
+> **📖 [Full Documentation Hub](./docs/README.md)** - Your one-stop destination for all guides, references, and tutorials
 
-### Usage Guides
-- 🚀 [Getting Started](./docs/usage/getting-started.md)
-- 📖 [Basic Usage](./docs/usage/basic-usage.md)
-- 🤖 [Agent Commands](./docs/usage/agent-commands.md)
-- 🔬 [Advanced Features](./docs/usage/advanced.md)
+### 🚀 Quick Navigation
 
-### Agent Documentation
-- 🧩 [Agent OS Overview](./docs/agents/overview.md)
-- 🔍 [Individual Agent Guides](./docs/agents/)
-- 🧠 [Agent Memory System](./docs/architecture/agent-memory.md)
+| Getting Started | Core Features | Advanced | Technical |
+|-----------------|---------------|----------|-----------|
+| [Installation Guide](./docs/setup/installation.md) | [Basic Usage](./docs/usage/basic-usage.md) | [Advanced Features](./docs/usage/advanced-features.md) | [API Reference](./docs/architecture/api-reference.md) |
+| [Quick Start (5 min)](./docs/setup/quick-start.md) | [Agent Commands](./docs/usage/agent-commands.md) | [Claude Features](./docs/features/claude-features.md) | [Agent API](./docs/agents/api-reference.md) |
+| [Requirements](./docs/setup/requirements.md) | [Agent Overview](./docs/agents/overview.md) | [Migration Guide](./docs/migration/migration-guide.md) | [Troubleshooting](./docs/troubleshooting/common-issues.md) |
 
-### Technical Reference
-- 🏗️ [Architecture](./docs/architecture/system-design.md)
-- 📡 [API Reference](./docs/architecture/api-reference.md)
-- 🔧 [Troubleshooting](./docs/troubleshooting/common-issues.md)
+### 📋 Documentation Categories
+
+- **🛠️ Setup & Installation** - Complete setup guides from requirements to testing
+- **👤 Usage Guides** - From first-time use to advanced workflows and agent collaboration  
+- **🤖 Agent Documentation** - Comprehensive agent system guides, API references, and troubleshooting
+- **⭐ Claude Features** - Claude-exclusive features, context strategies, and performance optimization
+- **🏗️ Technical Reference** - API documentation, architecture details, and integration guides
+- **📦 Migration & Upgrades** - Complete migration guide from OpenAI-only versions
+- **🔧 Troubleshooting** - Common issues, advanced debugging, and support resources
 
 ## 🎯 Basic Usage
 

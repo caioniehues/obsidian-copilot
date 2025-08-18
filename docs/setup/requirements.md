@@ -15,6 +15,30 @@
 - **Linux**: Ubuntu 20.04+ or equivalent
 - **Windows**: Windows 10/11 with WSL2
 
+### AI Model Cache Requirements
+
+#### What is TRANSFORMER_CACHE?
+The `TRANSFORMER_CACHE` environment variable specifies where AI language models are stored locally. Obsidian Copilot uses the `intfloat/e5-small-v2` model for semantic search capabilities.
+
+#### Why It's Needed
+- **Semantic Search**: Enables finding notes by meaning, not just keywords
+- **Better Context**: Helps Claude receive more relevant notes for your queries
+- **One-time Download**: Models are cached to avoid repeated downloads (~130 MB)
+
+#### Space Requirements
+- **E5-small-v2 Model**: ~130 MB
+- **Cache Location**: Default is `~/.cache/huggingface/hub`
+- **Shared Cache**: Can be used by other Hugging Face projects
+
+#### Setting the Variable
+```bash
+export TRANSFORMER_CACHE=~/.cache/huggingface/hub
+```
+
+This cache enables the dual retrieval system:
+1. **Keyword Search** (OpenSearch) - Exact term matching
+2. **Semantic Search** (E5 embeddings) - Concept and meaning matching
+
 ## Required Software
 
 ### 1. Obsidian

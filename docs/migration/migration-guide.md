@@ -193,7 +193,7 @@ make run
 ## Support
 
 For issues or questions:
-1. Check the [README](README.md) for general setup
+1. Check the [README](../../README.md) for general setup
 2. Review this migration guide
 3. Check [GitHub Issues](https://github.com/eugeneyan/obsidian-copilot/issues)
 4. Create a new issue with:

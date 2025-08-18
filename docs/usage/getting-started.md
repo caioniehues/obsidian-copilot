@@ -172,7 +172,13 @@ Timeline of today's work
 **Context used**: 45,231 tokens
 **Documents analyzed**: 23
 **Generation time**: 7.3s
+**Confidence**: High
 ```
+
+### Confidence Indicators
+- **High**: Strong evidence from multiple sources
+- **Medium**: Moderate evidence or single source
+- **Low**: Limited evidence or inference
 
 ### Following Up
 After any response:
@@ -223,7 +229,7 @@ After any response:
 ### After Your First Day
 1. Explore [Basic Usage](./basic-usage.md)
 2. Learn [Agent Commands](./agent-commands.md)
-3. Try [Advanced Features](./advanced.md)
+3. Try [Advanced Features](./advanced-features.md)
 
 ### After Your First Week
 1. Review agent memories
@@ -244,9 +250,13 @@ After any response:
 ```
 
 ### Keyboard Shortcuts
+
+Configure in Obsidian settings:
+
 - `Cmd/Ctrl + Shift + G` - Generate from selection
-- `Cmd/Ctrl + Shift + S` - Synthesize
+- `Cmd/Ctrl + Shift + S` - Synthesize current note
 - `Cmd/Ctrl + Shift + R` - Research mode
+- `Cmd/Ctrl + Shift + A` - Analyze vault
 
 ### Help Commands
 ```markdown
