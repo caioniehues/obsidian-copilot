@@ -30,6 +30,29 @@
 
 ## 🚀 Quick Start
 
+### Option 1: Plugin-Only (2 minutes) ✨
+
+**Just want to use Claude/OpenAI in Obsidian? Start here!**
+
+```bash
+# 1. Clone and build plugin
+git clone https://github.com/caioniehues/obsidian-copilot.git
+cd obsidian-copilot/plugin
+npm install && npm run build
+
+# 2. Install to Obsidian
+mkdir -p ~/YourVault/.obsidian/plugins/obsidian-copilot
+cp main.js manifest.json styles.css ~/YourVault/.obsidian/plugins/obsidian-copilot/
+
+# 3. Enable in Obsidian & add your API key
+```
+
+📖 **[Full Plugin-Only Guide](./docs/setup/plugin-only-installation.md)** - Works just like any Obsidian plugin!
+
+### Option 2: Full Setup with RAG (15 minutes) 🚀
+
+**Want advanced features like vault search and agents?**
+
 ```bash
 # 1. Clone repository
 git clone https://github.com/caioniehues/obsidian-copilot.git
@@ -39,17 +62,15 @@ cd obsidian-copilot
 export OBSIDIAN_PATH=/path/to/vault/
 export TRANSFORMER_CACHE=~/.cache/huggingface/hub
 
-# 3. Build and start
-make build && make opensearch
-# Wait 30 seconds, then in new terminal:
-make build-artifacts && make run
+# 3. Start everything with one command
+docker-compose -f docker-compose.simple.yml up
 
-# 4. Install plugin
+# 4. Install plugin (same as Option 1)
 cd plugin && npm install && npm run build
-cd .. && make install-plugin
+make install-plugin
 ```
 
-Enable in Obsidian: Settings → Community Plugins → Obsidian Copilot
+📖 **[Full Installation Guide](./docs/setup/installation.md)** - Complete setup with all features
 
 ## 📚 Complete Documentation
 

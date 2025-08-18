@@ -1,35 +1,73 @@
 import { App, Editor, MarkdownView, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
 
-// Claude-optimized Copilot settings
+// Claude-optimized Copilot settings with hybrid mode support
 interface CopilotPluginSettings {
+	// Mode settings
+	mode: 'auto' | 'direct' | 'backend';
+	apiProvider: 'anthropic' | 'openai';
+	apiKey: string;
+	
+	// Backend settings
 	backendUrl: string;
+	
+	// Model settings
 	claudeModel: string;
+	openaiModel: string;
+	
+	// Shared settings
 	contextStrategy: 'full_docs' | 'smart_chunks' | 'hierarchical';
 	maxContextTokens: number;
+	maxOutputTokens: number;
+	temperature: number;
 	showGenerationTime: boolean;
+	
+	// System prompts
 	systemContentDraftSection: string;
 	systemContentDraftSectionNoContext: string;
 	systemContentReflectWeek: string;
+	
+	// Feature flags
 	enableVaultAnalysis: boolean;
 	enableSynthesis: boolean;
+	showModeIndicator: boolean;
 }
 
 const DEFAULT_SETTINGS: CopilotPluginSettings = {
+	// Mode settings
+	mode: 'auto',
+	apiProvider: 'anthropic',
+	apiKey: '',
+	
+	// Backend settings
 	backendUrl: 'http://localhost:8000',
+	
+	// Model settings
 	claudeModel: 'claude-3-5-sonnet-20241022',
+	openaiModel: 'gpt-4-turbo-preview',
+	
+	// Shared settings
 	contextStrategy: 'smart_chunks',
 	maxContextTokens: 100000,
+	maxOutputTokens: 4096,
+	temperature: 0.7,
 	showGenerationTime: true,
+	
+	// System prompts
 	systemContentDraftSection: "You are Claude-powered Obsidian Copilot, an advanced AI assistant that helps writers craft drafts based on their notes.\n\nWith access to a 200K token context window, you can understand entire documents and their relationships. When you reference content from a document, append the sentence with a markdown reference that links to the document's title. For example, if a sentence references context from 'Augmented Language Models.md', it should end with ([source](Augmented%20Language%20Models.md)).",
 	systemContentDraftSectionNoContext: "You are Claude-powered Obsidian Copilot, an advanced AI assistant that helps writers craft drafts.\n\nGenerate comprehensive content based on the given section heading, leveraging your extensive knowledge and reasoning capabilities.",
 	systemContentReflectWeek: "You are a thoughtful AI companion powered by Claude, helping users reflect on their week with deep insight and empathy. Given their journal entries, provide a thoughtful analysis for each of the following:\n\n* Celebrate what went well\n* Reflect on areas for growth\n* Suggest goals for next week",
+	
+	// Feature flags
 	enableVaultAnalysis: true,
-	enableSynthesis: true
+	enableSynthesis: true,
+	showModeIndicator: true
 }
 
 export default class CopilotPlugin extends Plugin {
 	settings: CopilotPluginSettings;
 	processing = false;
+	backendAvailable = false;
+	currentMode: 'direct' | 'backend' = 'direct';
 
 	// Opens a new pane to display the retrieved docs
 	async openNewPane(content: string) {
@@ -55,8 +93,99 @@ export default class CopilotPlugin extends Plugin {
 		}
 	}
 
+	// Backend health check
+	async checkBackendAvailability(): Promise<boolean> {
+		try {
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 1000);
+			
+			const response = await fetch(`${this.settings.backendUrl}/health`, {
+				signal: controller.signal
+			});
+			
+			clearTimeout(timeoutId);
+			this.backendAvailable = response.ok;
+			return response.ok;
+		} catch (error) {
+			this.backendAvailable = false;
+			return false;
+		}
+	}
 
-	// Removed OpenAI API method - now using Claude exclusively via backend
+	// Determine which mode to use
+	async determineMode(): Promise<'direct' | 'backend'> {
+		if (this.settings.mode === 'direct') {
+			this.currentMode = 'direct';
+			return 'direct';
+		}
+		
+		if (this.settings.mode === 'backend') {
+			this.currentMode = 'backend';
+			return 'backend';
+		}
+		
+		// Auto mode - check backend availability
+		const backendAvailable = await this.checkBackendAvailability();
+		this.currentMode = backendAvailable ? 'backend' : 'direct';
+		return this.currentMode;
+	}
+
+	// Direct API methods for standalone operation
+	async queryLLM(messages: any[], model: string, temperature: number): Promise<Response> {
+		if (this.settings.apiProvider === 'anthropic') {
+			return await this.queryAnthropic(messages, model, temperature);
+		} else {
+			return await this.queryOpenAI(messages, model, temperature);
+		}
+	}
+
+	async queryAnthropic(messages: any[], model: string, temperature: number): Promise<Response> {
+		// Convert OpenAI format messages to Anthropic format
+		const anthropicMessages = messages.filter(m => m.role !== 'system').map(m => ({
+			role: m.role === 'user' ? 'user' : 'assistant',
+			content: m.content
+		}));
+		
+		const systemMessage = messages.find(m => m.role === 'system')?.content || '';
+		
+		const response = await fetch('https://api.anthropic.com/v1/messages', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-api-key': this.settings.apiKey,
+				'anthropic-version': '2023-06-01'
+			},
+			body: JSON.stringify({
+				model: model || this.settings.claudeModel,
+				messages: anthropicMessages,
+				system: systemMessage,
+				max_tokens: this.settings.maxOutputTokens,
+				temperature: temperature || this.settings.temperature,
+				stream: true
+			})
+		});
+		
+		return response;
+	}
+
+	async queryOpenAI(messages: any[], model: string, temperature: number): Promise<Response> {
+		const response = await fetch('https://api.openai.com/v1/chat/completions', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'Authorization': `Bearer ${this.settings.apiKey}`
+			},
+			body: JSON.stringify({
+				model: model || this.settings.openaiModel,
+				messages: messages,
+				max_tokens: this.settings.maxOutputTokens,
+				temperature: temperature || this.settings.temperature,
+				stream: true
+			})
+		});
+		
+		return response;
+	}
 
 	// Claude generation method
 	private async generateWithClaude(query: string, systemPrompt: string): Promise<any> {
@@ -165,6 +294,10 @@ export default class CopilotPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+		
+		// Check backend availability on startup
+		await this.determineMode();
+		console.log(`Obsidian Copilot starting in ${this.currentMode} mode`);
 
 		async function parseStream(reader: any, editor: Editor): Promise<void> {
 			let buffer = '';
@@ -217,7 +350,33 @@ export default class CopilotPlugin extends Plugin {
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Copilot loaded');
+		
+		// Update status bar based on current mode
+		const updateStatusBar = () => {
+			if (this.settings.showModeIndicator) {
+				const modeIcon = this.currentMode === 'backend' ? '🚀' : '✨';
+				const modeText = this.currentMode === 'backend' ? 'Enhanced' : 'Direct';
+				statusBarItemEl.setText(`Copilot: ${modeIcon} ${modeText}`);
+			} else {
+				statusBarItemEl.setText('Copilot ready');
+			}
+		};
+		
+		updateStatusBar();
+		
+		// Periodically check backend availability in auto mode
+		if (this.settings.mode === 'auto') {
+			this.registerInterval(
+				window.setInterval(async () => {
+					const previousMode = this.currentMode;
+					await this.determineMode();
+					if (previousMode !== this.currentMode) {
+						updateStatusBar();
+						console.log(`Copilot switched to ${this.currentMode} mode`);
+					}
+				}, 30000) // Check every 30 seconds
+			);
+		}
 
 		// Editor command that drafts a section given the section heading and context
 		this.addCommand({
@@ -400,20 +559,67 @@ class CopilotSettingTab extends PluginSettingTab {
 
 		containerEl.createEl('h2', { text: 'Settings for Obsidian Copilot' });
 
-		// Backend Selection
-		containerEl.createEl('h3', { text: 'Backend Configuration' });
+		// Mode Selection
+		containerEl.createEl('h3', { text: 'Operation Mode' });
+		
+		// Current Status
+		new Setting(containerEl)
+			.setName('Current Status')
+			.setDesc(`Mode: ${this.plugin.currentMode === 'backend' ? '🚀 Enhanced (with backend)' : '✨ Direct API'} | Backend: ${this.plugin.backendAvailable ? '✅ Available' : '❌ Not available'}`)
+			.addButton(button => button
+				.setButtonText('Check Now')
+				.onClick(async () => {
+					await this.plugin.determineMode();
+					this.display(); // Refresh display
+				}));
 		
 		new Setting(containerEl)
-			.setName('Use Claude Backend')
-			.setDesc('Use Claude Code CLI instead of OpenAI API for generation. Requires Claude Code installed on backend server.')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.useClaudeBackend)
-				.onChange(async (value) => {
-					this.plugin.settings.useClaudeBackend = value;
+			.setName('Mode')
+			.setDesc('Auto: Use backend when available, fallback to direct API. Direct: Always use API keys. Backend: Always use backend.')
+			.addDropdown(dropdown => dropdown
+				.addOption('auto', 'Auto (Recommended)')
+				.addOption('direct', 'Direct API Only')
+				.addOption('backend', 'Backend Only')
+				.setValue(this.plugin.settings.mode)
+				.onChange(async (value: 'auto' | 'direct' | 'backend') => {
+					this.plugin.settings.mode = value;
 					await this.plugin.saveSettings();
-					// Refresh display to show/hide relevant settings
+					await this.plugin.determineMode();
 					this.display();
 				}));
+
+		// API Configuration (for direct mode)
+		if (this.plugin.settings.mode !== 'backend') {
+			containerEl.createEl('h3', { text: 'API Configuration' });
+			
+			new Setting(containerEl)
+				.setName('API Provider')
+				.setDesc('Choose between Anthropic Claude or OpenAI')
+				.addDropdown(dropdown => dropdown
+					.addOption('anthropic', 'Anthropic Claude')
+					.addOption('openai', 'OpenAI')
+					.setValue(this.plugin.settings.apiProvider)
+					.onChange(async (value: 'anthropic' | 'openai') => {
+						this.plugin.settings.apiProvider = value;
+						await this.plugin.saveSettings();
+						this.display();
+					}));
+			
+			new Setting(containerEl)
+				.setName('API Key')
+				.setDesc(`Enter your ${this.plugin.settings.apiProvider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key`)
+				.addText(text => text
+					.setPlaceholder(this.plugin.settings.apiProvider === 'anthropic' ? 'sk-ant-...' : 'sk-...')
+					.setValue(this.plugin.settings.apiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.apiKey = value;
+						await this.plugin.saveSettings();
+					}));
+		}
+
+		// Backend Configuration (for backend mode)
+		if (this.plugin.settings.mode !== 'direct') {
+			containerEl.createEl('h3', { text: 'Backend Configuration' });
 
 		new Setting(containerEl)
 			.setName('Backend URL')

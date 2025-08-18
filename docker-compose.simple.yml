@@ -1,0 +1,77 @@
+version: '3.8'
+
+# Simplified single-container setup for Obsidian Copilot
+# Usage: docker-compose -f docker-compose.simple.yml up
+
+services:
+  obsidian-copilot-all:
+    build: .
+    container_name: obsidian-copilot-backend
+    ports:
+      - "8000:8000"     # FastAPI backend
+      - "9200:9200"     # OpenSearch (embedded)
+    volumes:
+      - ./data:/obsidian-copilot/data
+      - ${OBSIDIAN_PATH}:/obsidian-vault:ro
+      - ${TRANSFORMER_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface/hub
+    environment:
+      # API Keys (optional - plugin can use its own)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      
+      # Claude settings
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-5-sonnet-20241022}
+      - MAX_CONTEXT_TOKENS=${MAX_CONTEXT_TOKENS:-100000}
+      
+      # Backend settings
+      - EMBEDDED_OPENSEARCH=true
+      - AUTO_BUILD_INDICES=true
+      - REBUILD_ON_STARTUP=${REBUILD_ON_STARTUP:-false}
+      
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      
+    command: |
+      bash -c "
+        echo '🚀 Starting Obsidian Copilot Backend with embedded services...'
+        
+        # Start OpenSearch in background
+        if [ '$${EMBEDDED_OPENSEARCH}' = 'true' ]; then
+          echo '📊 Starting embedded OpenSearch...'
+          /usr/share/opensearch/bin/opensearch &
+          
+          # Wait for OpenSearch to be ready
+          echo 'Waiting for OpenSearch to initialize...'
+          until curl -s http://localhost:9200 > /dev/null; do
+            sleep 2
+          done
+          echo '✅ OpenSearch is ready'
+        fi
+        
+        # Build or rebuild indices if needed
+        if [ '$${AUTO_BUILD_INDICES}' = 'true' ] || [ '$${REBUILD_ON_STARTUP}' = 'true' ]; then
+          echo '🔨 Building search indices...'
+          python -m src.prep.build_opensearch_index
+          python -m src.prep.build_semantic_index
+          echo '✅ Indices built successfully'
+        fi
+        
+        # Start the FastAPI backend
+        echo '🌐 Starting FastAPI backend...'
+        uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
+      "
+
+# Optional: Add Redis for caching (uncomment if needed)
+# redis:
+#   image: redis:alpine
+#   ports:
+#     - "6379:6379"
+#   volumes:
+#     - redis_data:/data
+    
+# volumes:
+#   redis_data:

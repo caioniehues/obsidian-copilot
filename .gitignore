@@ -169,4 +169,12 @@ notebooks/
 # Data
 data/
 data-local/
-plugin/node_modules/.idea/
+
+# Node.js
+node_modules/
+plugin/node_modules/
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
