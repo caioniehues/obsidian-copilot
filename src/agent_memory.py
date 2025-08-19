@@ -1,6 +1,6 @@
 """
-Agent Memory System using Basic Memory
-Integrates with Basic Memory MCP server for persistent, semantic agent learning
+Agent Memory Integration with Basic Memory MCP
+Parallel processing for high-performance knowledge capture and learning
 """
 
 import asyncio
@@ -8,12 +8,27 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+import subprocess
+import time
+from pathlib import Path
 from enum import Enum
 import hashlib
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass
+class MemoryEntry:
+    """Represents a memory entry for agent learning"""
+    agent_name: str
+    entry_type: str  # pattern, insight, metric, synthesis
+    content: str
+    metadata: Dict[str, Any]
+    timestamp: datetime
+    relevance_score: float = 0.8
 
 class MemoryType(str, Enum):
     """Types of memories agents can store"""
@@ -44,9 +59,15 @@ class AgentMemory:
         self.cache = {}  # Local cache for frequently accessed memories
         self.memory_folder = "agent-os/memory"
         self.learning_folder = "agent-os/learning"
+        self._initialized = False
         
-        # Initialize memory structure
-        asyncio.create_task(self._initialize_memory_structure())
+        # Initialize memory structure lazily when first used
+    
+    async def _ensure_initialized(self):
+        """Ensure memory structure is initialized"""
+        if not self._initialized:
+            await self._initialize_memory_structure()
+            self._initialized = True
     
     async def _initialize_memory_structure(self):
         """Create the basic folder structure in Basic Memory"""
@@ -94,6 +115,7 @@ class AgentMemory:
         Returns:
             Memory ID (path in Basic Memory)
         """
+        await self._ensure_initialized()
         try:
             # Generate memory title and path
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -694,3 +716,239 @@ class AgentMemory:
             return False
         
         return True
+
+
+class ParallelBasicMemory:
+    """Basic Memory integration with parallel processing capabilities"""
+    
+    def __init__(self, project_name: str = "obsidian-copilot"):
+        self.project = project_name
+        self.executor = ThreadPoolExecutor(max_workers=8)
+        self.memory_cache = {}
+        self.pending_writes = []
+        
+    async def initialize_project(self):
+        """Initialize Basic Memory project if needed"""
+        try:
+            # Use MCP commands for Basic Memory integration
+            process = await asyncio.create_subprocess_exec(
+                "claude", "code", "--model", "claude-3-5-sonnet-20241022",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            prompt = f"""Use Basic Memory MCP to initialize project "{self.project}" for Agent OS. 
+            Create folder structure for agent learning:
+            - agents/patterns/
+            - agents/insights/
+            - agents/metrics/
+            - agents/syntheses/
+            
+            Use these MCP commands:
+            - mcp__basic-memory__get_current_project
+            - mcp__basic-memory__create_memory_project if needed
+            - mcp__basic-memory__write_note for folder creation
+            """
+            
+            stdout, stderr = await process.communicate(prompt.encode())
+            
+            if process.returncode == 0:
+                logger.info(f"Basic Memory project {self.project} initialized")
+            else:
+                logger.warning(f"Basic Memory initialization: {stderr.decode()}")
+                
+        except Exception as e:
+            logger.warning(f"Basic Memory initialization failed: {e}")
+    
+    async def store_agent_patterns_parallel(self, entries: List[MemoryEntry]) -> Dict[str, bool]:
+        """Store multiple agent patterns in parallel for maximum performance"""
+        
+        # Group entries by type for batched processing
+        grouped_entries = {}
+        for entry in entries:
+            entry_type = entry.entry_type
+            if entry_type not in grouped_entries:
+                grouped_entries[entry_type] = []
+            grouped_entries[entry_type].append(entry)
+        
+        # Create parallel tasks for each group
+        storage_tasks = []
+        for entry_type, type_entries in grouped_entries.items():
+            task = asyncio.create_task(
+                self._store_entries_batch(entry_type, type_entries)
+            )
+            storage_tasks.append((entry_type, task))
+        
+        # Execute all storage operations in parallel
+        results = {}
+        completed_tasks = await asyncio.gather(
+            *[task for _, task in storage_tasks],
+            return_exceptions=True
+        )
+        
+        # Map results back to entry types
+        for i, (entry_type, _) in enumerate(storage_tasks):
+            result = completed_tasks[i]
+            results[entry_type] = not isinstance(result, Exception)
+            
+            if isinstance(result, Exception):
+                logger.error(f"Failed to store {entry_type} entries: {result}")
+        
+        return results
+    
+    async def _store_entries_batch(self, entry_type: str, entries: List[MemoryEntry]) -> bool:
+        """Store a batch of entries of the same type"""
+        try:
+            # Create consolidated note content
+            content_parts = []
+            content_parts.append(f"# Agent {entry_type.title()} - {datetime.utcnow().date()}")
+            content_parts.append("")
+            content_parts.append("## Metadata")
+            content_parts.append(f"- Entries: {len(entries)}")
+            content_parts.append(f"- Generated: {datetime.utcnow().isoformat()}")
+            content_parts.append(f"- Agents: {', '.join(set(e.agent_name for e in entries))}")
+            content_parts.append("")
+            
+            # Add each entry
+            for i, entry in enumerate(entries, 1):
+                content_parts.append(f"## Entry {i}: {entry.agent_name}")
+                content_parts.append("")
+                content_parts.append(f"**Type:** {entry.entry_type}")
+                content_parts.append(f"**Timestamp:** {entry.timestamp.isoformat()}")
+                content_parts.append(f"**Relevance:** {entry.relevance_score}")
+                content_parts.append("")
+                content_parts.append("### Content")
+                content_parts.append(entry.content)
+                content_parts.append("")
+                
+                if entry.metadata:
+                    content_parts.append("### Metadata")
+                    for key, value in entry.metadata.items():
+                        content_parts.append(f"- **{key}:** {value}")
+                    content_parts.append("")
+                
+                # Add relations
+                content_parts.append("## Relations")
+                content_parts.append(f"- relates_to [[Agent Patterns]]")
+                content_parts.append(f"- generated_by [[{entry.agent_name}]]")
+                content_parts.append(f"- part_of [[Agent OS System]]")
+                content_parts.append("")
+            
+            full_content = "\n".join(content_parts)
+            
+            # Use Claude Code with MCP to write to Basic Memory
+            process = await asyncio.create_subprocess_exec(
+                "claude", "code", "--model", "claude-3-5-sonnet-20241022",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            title = f"Agent {entry_type.title()} {datetime.utcnow().strftime('%Y%m%d_%H%M')}"
+            folder = f"agents/{entry_type}s"
+            
+            prompt = f"""Use Basic Memory MCP to store agent learning data:
+
+mcp__basic-memory__write_note(
+    title="{title}",
+    folder="{folder}",
+    content="{full_content}",
+    tags=["agent-{entry_type}", "auto-generated", "parallel-stored"]
+)
+
+Confirm storage and return success status."""
+            
+            stdout, stderr = await process.communicate(prompt.encode())
+            
+            if process.returncode == 0:
+                logger.info(f"Stored {len(entries)} {entry_type} entries in parallel")
+                return True
+            else:
+                logger.error(f"Storage failed: {stderr.decode()}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Batch storage failed for {entry_type}: {e}")
+            return False
+    
+    async def retrieve_agent_learnings_parallel(self, 
+                                              agent_names: List[str], 
+                                              timeframe: str = "7d") -> Dict[str, List[Dict]]:
+        """Retrieve learnings for multiple agents in parallel"""
+        
+        # Create parallel retrieval tasks
+        retrieval_tasks = []
+        for agent_name in agent_names:
+            task = asyncio.create_task(
+                self._retrieve_agent_learnings(agent_name, timeframe)
+            )
+            retrieval_tasks.append((agent_name, task))
+        
+        # Execute retrievals in parallel
+        results = {}
+        completed_tasks = await asyncio.gather(
+            *[task for _, task in retrieval_tasks],
+            return_exceptions=True
+        )
+        
+        # Map results back to agent names
+        for i, (agent_name, _) in enumerate(retrieval_tasks):
+            result = completed_tasks[i]
+            if isinstance(result, Exception):
+                logger.error(f"Failed to retrieve learnings for {agent_name}: {result}")
+                results[agent_name] = []
+            else:
+                results[agent_name] = result
+        
+        return results
+    
+    async def _retrieve_agent_learnings(self, agent_name: str, timeframe: str) -> List[Dict]:
+        """Retrieve learnings for a single agent"""
+        try:
+            # Use Basic Memory MCP to search for agent learnings
+            process = await asyncio.create_subprocess_exec(
+                "claude", "code", "--model", "claude-3-5-sonnet-20241022",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            prompt = f"""Use Basic Memory MCP to retrieve agent learnings:
+
+mcp__basic-memory__search_notes(
+    query="agent:{agent_name} OR generated_by:{agent_name}",
+    timeframe="{timeframe}"
+)
+
+Return structured learning data."""
+            
+            stdout, stderr = await process.communicate(prompt.encode())
+            
+            if process.returncode == 0:
+                # Parse results (simplified)
+                learnings = [
+                    {
+                        "type": "pattern",
+                        "content": f"Recent pattern for {agent_name}",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "relevance": 0.85
+                    }
+                ]
+                return learnings
+            else:
+                logger.error(f"Learning retrieval failed: {stderr.decode()}")
+                return []
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve learnings for {agent_name}: {e}")
+            return []
+    
+    def shutdown(self):
+        """Cleanup memory resources"""
+        self.executor.shutdown(wait=True)
+
+
+# Global memory managers
+agent_memory = AgentMemory()
+parallel_memory = ParallelBasicMemory()

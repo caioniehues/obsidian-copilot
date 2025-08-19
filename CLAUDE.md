@@ -114,3 +114,4 @@ The project supports both Docker and Podman. Set runtime with:
 ```bash
 export RUNTIME=podman  # or docker (default)
 ```
+- CRITICAL: ALWAYS USE MULTIPLE PARALLEL TASKS AND AGENTS FOR GREAT PERFORMANCE

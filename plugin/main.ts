@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { App, Editor, MarkdownView, Plugin, PluginSettingTab, Setting, TFile, Modal, Notice } from 'obsidian';
 
 // Claude-optimized Copilot settings with hybrid mode support
 interface CopilotPluginSettings {
@@ -521,6 +521,198 @@ export default class CopilotPlugin extends Plugin {
 			}
 		});
 
+		// Agent OS Commands - Parallel Execution Support
+		this.addCommand({
+			id: 'agent-analyze-vault',
+			name: '🤖 Agent: Analyze Vault',
+			editorCallback: async (editor: Editor, view: MarkdownView) => {
+				const statusBarItemEl = this.addStatusBarItem();
+				statusBarItemEl.setText('🔍 Agent analyzing vault...');
+
+				try {
+					const response = await fetch(`${this.settings.backendUrl}/agents/vault-analyze`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' }
+					});
+
+					if (!response.ok) {
+						throw new Error(`Agent analysis failed: ${response.statusText}`);
+					}
+
+					const result = await response.json();
+					
+					// Create comprehensive analysis report
+					const analysisReport = this.formatVaultAnalysis(result.analysis);
+					editor.replaceSelection(`## 🤖 Vault Analysis Report\n\n${analysisReport}\n\n`);
+					
+					statusBarItemEl.setText('✅ Vault analysis complete!');
+					setTimeout(() => statusBarItemEl.remove(), 3000);
+
+				} catch (error) {
+					console.error('Vault analysis error:', error);
+					statusBarItemEl.setText('❌ Analysis failed');
+					setTimeout(() => statusBarItemEl.remove(), 3000);
+				}
+			}
+		});
+
+		this.addCommand({
+			id: 'agent-synthesize',
+			name: '🧠 Agent: Synthesize Selection',
+			editorCallback: async (editor: Editor, view: MarkdownView) => {
+				const selection = editor.getSelection();
+				if (!selection) {
+					console.log('No text selected for synthesis');
+					return;
+				}
+
+				const statusBarItemEl = this.addStatusBarItem();
+				statusBarItemEl.setText('🧠 Agent synthesizing...');
+
+				try {
+					// Parse selected text for note references
+					const noteRefs = this.extractNoteReferences(selection);
+					
+					const response = await fetch(`${this.settings.backendUrl}/agents/synthesize`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							note_paths: noteRefs,
+							synthesis_type: 'thematic'
+						})
+					});
+
+					if (!response.ok) {
+						throw new Error(`Synthesis failed: ${response.statusText}`);
+					}
+
+					const result = await response.json();
+					
+					// Replace selection with synthesis
+					const synthesis = `## 🧠 Agent Synthesis\n\n${result.synthesis_result.synthesis || 'Synthesis not available'}\n\n*Processed ${result.documents_processed} documents*\n\n`;
+					editor.replaceSelection(synthesis);
+					
+					statusBarItemEl.setText('✅ Synthesis complete!');
+					setTimeout(() => statusBarItemEl.remove(), 3000);
+
+				} catch (error) {
+					console.error('Synthesis error:', error);
+					statusBarItemEl.setText('❌ Synthesis failed');
+					setTimeout(() => statusBarItemEl.remove(), 3000);
+				}
+			}
+		});
+
+		this.addCommand({
+			id: 'agent-optimize-context',
+			name: '⚡ Agent: Optimize Performance',
+			callback: async () => {
+				const statusBarItemEl = this.addStatusBarItem();
+				statusBarItemEl.setText('⚡ Agent optimizing...');
+
+				try {
+					const response = await fetch(`${this.settings.backendUrl}/agents/optimize-context`, {
+						method: 'GET',
+						headers: { 'Content-Type': 'application/json' }
+					});
+
+					if (!response.ok) {
+						throw new Error(`Optimization failed: ${response.statusText}`);
+					}
+
+					const result = await response.json();
+					
+					// Show optimization results in notice
+					const optimizationSummary = this.formatOptimizationResult(result.optimization_result);
+					new Notice(`⚡ Performance optimized!\n${optimizationSummary}`, 5000);
+					
+					statusBarItemEl.setText('✅ Optimization complete!');
+					setTimeout(() => statusBarItemEl.remove(), 3000);
+
+				} catch (error) {
+					console.error('Optimization error:', error);
+					statusBarItemEl.setText('❌ Optimization failed');
+					setTimeout(() => statusBarItemEl.remove(), 3000);
+				}
+			}
+		});
+
+		this.addCommand({
+			id: 'agent-parallel-execute',
+			name: '🚀 Agent: Execute Multiple Agents',
+			editorCallback: async (editor: Editor, view: MarkdownView) => {
+				const statusBarItemEl = this.addStatusBarItem();
+				statusBarItemEl.setText('🚀 Executing agents in parallel...');
+
+				try {
+					// Execute multiple agents in parallel for maximum performance
+					const response = await fetch(`${this.settings.backendUrl}/agents/execute`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							agent_names: ['vault-analyzer', 'context-optimizer', 'suggestion-engine'],
+							parallel: true,
+							context: {
+								active_note: view.file?.path || '',
+								execution_mode: 'comprehensive'
+							}
+						})
+					});
+
+					if (!response.ok) {
+						throw new Error(`Parallel execution failed: ${response.statusText}`);
+					}
+
+					const result = await response.json();
+					
+					// Format results from all agents
+					const agentReport = this.formatParallelAgentResults(result);
+					editor.replaceSelection(`## 🚀 Multi-Agent Analysis\n\n${agentReport}\n\n`);
+					
+					statusBarItemEl.setText(`✅ ${result.agents_executed} agents completed in ${result.total_execution_time.toFixed(2)}s!`);
+					setTimeout(() => statusBarItemEl.remove(), 5000);
+
+				} catch (error) {
+					console.error('Parallel execution error:', error);
+					statusBarItemEl.setText('❌ Execution failed');
+					setTimeout(() => statusBarItemEl.remove(), 3000);
+				}
+			}
+		});
+
+		this.addCommand({
+			id: 'agent-status',
+			name: '📊 Agent: Show Status',
+			callback: async () => {
+				const statusBarItemEl = this.addStatusBarItem();
+				statusBarItemEl.setText('📊 Checking agent status...');
+
+				try {
+					const response = await fetch(`${this.settings.backendUrl}/agents/status`, {
+						method: 'GET',
+						headers: { 'Content-Type': 'application/json' }
+					});
+
+					if (!response.ok) {
+						throw new Error(`Status check failed: ${response.statusText}`);
+					}
+
+					const result = await response.json();
+					
+					// Show agent status in modal
+					this.showAgentStatusModal(result.agents);
+					
+					statusBarItemEl.setText('✅ Status retrieved!');
+					setTimeout(() => statusBarItemEl.remove(), 2000);
+
+				} catch (error) {
+					console.error('Status check error:', error);
+					new Notice('❌ Failed to get agent status', 3000);
+					statusBarItemEl.remove();
+				}
+			}
+		});
+
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new CopilotSettingTab(this.app, this));
@@ -533,6 +725,166 @@ export default class CopilotPlugin extends Plugin {
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+	}
+
+	// Helper methods for agent command formatting
+
+	formatVaultAnalysis(analysis: any): string {
+		if (!analysis) return "Analysis data not available";
+
+		const parts = [];
+		
+		// Basic statistics
+		if (analysis.statistics) {
+			const stats = analysis.statistics;
+			parts.push(`### 📊 Vault Statistics
+- **Total Notes**: ${stats.total_notes || 0}
+- **Total Words**: ${stats.total_words || 0}  
+- **Total Links**: ${stats.total_links || 0}
+- **Average Note Length**: ${stats.avg_note_length || 0} words`);
+		}
+
+		// Quality metrics
+		if (analysis.quality_metrics) {
+			const metrics = analysis.quality_metrics;
+			parts.push(`### ⭐ Quality Assessment
+- **Completeness**: ${(metrics.completeness * 100).toFixed(1)}%
+- **Connectivity**: ${(metrics.connectivity * 100).toFixed(1)}%
+- **Organization**: ${(metrics.organization * 100).toFixed(1)}%
+- **Consistency**: ${(metrics.consistency * 100).toFixed(1)}%`);
+		}
+
+		// Insights
+		if (analysis.insights && analysis.insights.length > 0) {
+			parts.push(`### 💡 Key Insights
+${analysis.insights.map((insight: string) => `- ${insight}`).join('\n')}`);
+		}
+
+		// Suggestions
+		if (analysis.suggestions && analysis.suggestions.length > 0) {
+			parts.push(`### 🎯 Recommendations
+${analysis.suggestions.map((suggestion: any) => `- **${suggestion.type}**: ${suggestion.suggestion} (${suggestion.priority} priority)`).join('\n')}`);
+		}
+
+		return parts.join('\n\n');
+	}
+
+	extractNoteReferences(text: string): string[] {
+		// Extract [[note]] references from text
+		const linkRegex = /\[\[([^\]]+)\]\]/g;
+		const matches = [];
+		let match;
+		
+		while ((match = linkRegex.exec(text)) !== null) {
+			matches.push(match[1]);
+		}
+		
+		// If no links found, return current file
+		return matches.length > 0 ? matches : [this.app.workspace.getActiveFile()?.basename || 'current'];
+	}
+
+	formatOptimizationResult(result: any): string {
+		if (!result) return "Optimization complete";
+		
+		return `Cache hit rate: ${(result.cache_hit_rate * 100).toFixed(1)}% | Avg latency: ${result.avg_latency_ms}ms`;
+	}
+
+	formatParallelAgentResults(result: any): string {
+		if (!result.results) return "No results available";
+
+		const parts = [`**Execution Mode**: ${result.execution_mode} | **Total Time**: ${result.total_execution_time.toFixed(2)}s\n`];
+
+		result.results.forEach((agentResult: any) => {
+			parts.push(`### 🤖 ${agentResult.agent_name}`);
+			parts.push(`**Status**: ${agentResult.status} | **Time**: ${agentResult.execution_time?.toFixed(2)}s`);
+			
+			if (agentResult.status === 'success' && agentResult.result) {
+				const res = agentResult.result;
+				
+				if (res.insights) {
+					parts.push(`**Insights**: ${res.insights.slice(0, 2).join(', ')}`);
+				}
+				
+				if (res.cache_hit_rate !== undefined) {
+					parts.push(`**Performance**: ${(res.cache_hit_rate * 100).toFixed(1)}% cache hit rate`);
+				}
+				
+				if (res.suggestions) {
+					parts.push(`**Suggestions**: ${res.suggestions.length} recommendations`);
+				}
+			} else if (agentResult.error) {
+				parts.push(`**Error**: ${agentResult.error}`);
+			}
+			
+			parts.push('');
+		});
+
+		return parts.join('\n');
+	}
+
+	showAgentStatusModal(agents: any[]) {
+		const modal = new Modal(this.app);
+		modal.titleEl.setText('🤖 Agent OS Status');
+		
+		const content = modal.contentEl;
+		content.empty();
+		
+		// Create status table
+		const table = content.createEl('table');
+		table.addClass('agent-status-table');
+		
+		// Header
+		const headerRow = table.createEl('tr');
+		['Agent', 'Status', 'Type', 'Description'].forEach(header => {
+			const th = headerRow.createEl('th');
+			th.setText(header);
+		});
+		
+		// Agent rows
+		agents.forEach(agent => {
+			const row = table.createEl('tr');
+			
+			const nameCell = row.createEl('td');
+			nameCell.setText(agent.name);
+			
+			const statusCell = row.createEl('td');
+			statusCell.setText(agent.enabled ? '✅ Enabled' : '❌ Disabled');
+			statusCell.addClass(agent.enabled ? 'status-enabled' : 'status-disabled');
+			
+			const typeCell = row.createEl('td');
+			typeCell.setText(agent.type || 'unknown');
+			
+			const descCell = row.createEl('td');
+			descCell.setText(agent.description || 'No description');
+		});
+		
+		// Add CSS for table styling
+		const style = content.createEl('style');
+		style.textContent = `
+			.agent-status-table {
+				width: 100%;
+				border-collapse: collapse;
+				margin-top: 10px;
+			}
+			.agent-status-table th,
+			.agent-status-table td {
+				border: 1px solid var(--background-modifier-border);
+				padding: 8px;
+				text-align: left;
+			}
+			.agent-status-table th {
+				background-color: var(--background-secondary);
+				font-weight: bold;
+			}
+			.status-enabled {
+				color: var(--text-success);
+			}
+			.status-disabled {
+				color: var(--text-error);
+			}
+		`;
+		
+		modal.open();
 	}
 
 	async loadSettings() {

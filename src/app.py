@@ -9,8 +9,10 @@ import os
 import pickle
 import subprocess
 import tempfile
-from typing import Dict, List, Optional
+import time
+from typing import Dict, List, Optional, Any
 from enum import Enum
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -23,32 +25,32 @@ from transformers import AutoModel, AutoTokenizer
 from src.logger import logger
 from src.prep.build_opensearch_index import INDEX_NAME, get_opensearch, query_opensearch
 from src.prep.build_semantic_index import query_semantic
+from src.agents_enhanced import enhanced_agent_manager, ParallelTask
+from src.services import service_manager
+from src.exceptions import (
+    CopilotError, 
+    ServiceUnavailableError, 
+    FileNotFoundError,
+    TimeoutError,
+    APIClientError
+)
+from src.utils.retry import timeout_wrapper, api_retry
 
-# Load vault dictionary
-vault = pickle.load(open("data/vault_dict.pickle", "rb"))
-logger.info(f"Vault loaded with {len(vault)} documents")
-
-# Create opensearch client
-try:
-    os_client = get_opensearch("opensearch")
-except ConnectionRefusedError:
-    os_client = get_opensearch("localhost")  # Change to 'localhost' if running locally
-logger.info(f"OS client initialized: {os_client.info()}")
-
-# Load semantic index
-doc_embeddings_array = np.load("data/doc_embeddings_array.npy")
-with open("data/embedding_index.pickle", "rb") as f:
-    embedding_index = pickle.load(f)
-tokenizer = AutoTokenizer.from_pretrained(
-    "intfloat/e5-small-v2"
-)  # Max token length is 512
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-model = AutoModel.from_pretrained("intfloat/e5-small-v2")
-logger.info(f"Semantic index loaded with {len(embedding_index)} documents")
+# Services will be initialized on startup
+vault = None
+os_client = None
+doc_embeddings_array = None
+embedding_index = None
+tokenizer = None
+model = None
 
 
 # Create app
-app = FastAPI()
+app = FastAPI(
+    title="Obsidian Copilot API",
+    description="Claude-optimized retrieval-augmented generation for Obsidian",
+    version="1.0.0"
+)
 
 # List of allowed origins. You can also allow all by using ["*"]
 origins = [
@@ -63,6 +65,110 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize all services on application startup."""
+    global vault, os_client, doc_embeddings_array, embedding_index, tokenizer, model
+    
+    try:
+        logger.info("Starting Obsidian Copilot API...")
+        
+        # Initialize all services with robust error handling
+        service_status = await service_manager.initialize_all_services()
+        
+        # Get services for global access (backward compatibility)
+        vault = service_manager.get_service('vault')
+        os_client = service_manager.get_service('opensearch_client')
+        doc_embeddings_array = service_manager.get_service('doc_embeddings_array')
+        embedding_index = service_manager.get_service('embedding_index')
+        tokenizer = service_manager.get_service('tokenizer')
+        model = service_manager.get_service('model')
+        
+        logger.info("✓ Obsidian Copilot API started successfully")
+        logger.info(f"Service status: {service_status}")
+        
+    except Exception as e:
+        logger.critical(f"Failed to start application: {e}")
+        raise
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Gracefully shutdown all services."""
+    logger.info("Shutting down Obsidian Copilot API...")
+    
+    try:
+        await service_manager.shutdown()
+        logger.info("✓ Application shutdown complete")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+
+
+# Health check endpoints
+@app.get("/health")
+async def health_check():
+    """Basic health check endpoint."""
+    try:
+        health_status = service_manager.get_health_status()
+        
+        # Determine overall health
+        is_healthy = (
+            health_status["initialized"] and
+            health_status["services"]["vault_data"] and
+            (health_status["services"]["opensearch"] or health_status["services"]["semantic_index"])
+        )
+        
+        return {
+            "status": "healthy" if is_healthy else "degraded",
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": "1.0.0",
+            "services": health_status["services"],
+            "degraded_services": health_status["degraded_services"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Health check failed: {str(e)}"
+        )
+
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """Detailed health check with service status and metrics."""
+    try:
+        health_status = service_manager.get_health_status()
+        
+        # Add additional metrics
+        metrics = {}
+        
+        if vault:
+            metrics["vault_documents"] = len(vault)
+        
+        if doc_embeddings_array is not None:
+            metrics["embedding_dimensions"] = doc_embeddings_array.shape
+        
+        return {
+            "status": "healthy" if health_status["initialized"] else "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": "1.0.0",
+            "dependencies": health_status,
+            "metrics": metrics,
+            "agents": {
+                "available": True,  # TODO: Get from agent manager
+                "count": 0  # TODO: Get actual count
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Detailed health check failed: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Detailed health check failed: {str(e)}"
+        )
 
 
 class ContextStrategy(str, Enum):
@@ -110,6 +216,34 @@ class ProgressiveDraftRequest(BaseModel):
     """Request for progressive document generation."""
     outline: Dict[str, List[str]]  # Section headers and bullet points
     style: str = "academic"  # academic, casual, technical
+
+
+# Agent-related models
+class AgentExecuteRequest(BaseModel):
+    """Request to execute one or more agents."""
+    agent_names: List[str]  # Names of agents to execute
+    context: Optional[Dict[str, Any]] = {}  # Context for agent execution
+    parallel: bool = True  # Execute agents in parallel
+    timeout: Optional[int] = 60  # Timeout in seconds
+
+class AgentStatusRequest(BaseModel):
+    """Request for agent status information."""
+    agent_names: Optional[List[str]] = None  # Specific agents, or all if None
+
+class AgentResponse(BaseModel):
+    """Response from agent execution."""
+    agent_name: str
+    status: str  # "success", "error", "timeout"
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    execution_time: Optional[float] = None
+    timestamp: str
+
+class AgentListResponse(BaseModel):
+    """Response listing available agents."""
+    agents: List[Dict[str, Any]]
+    total_count: int
+    enabled_count: int
 
 
 def parse_os_response(response: dict) -> List[dict]:
@@ -638,6 +772,254 @@ def get_context(
             "strategy": context_data["strategy_used"]
         }
     }
+
+
+# Agent OS Endpoints - Parallel Execution Support
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize agent manager and Redis on startup"""
+    await enhanced_agent_manager.initialize_redis()
+    logger.info("Agent OS initialized with parallel execution support")
+
+@app.on_event("shutdown") 
+async def shutdown_event():
+    """Cleanup agent resources on shutdown"""
+    enhanced_agent_manager.cleanup()
+    logger.info("Agent OS resources cleaned up")
+
+@app.post("/agents/execute")
+async def execute_agents(request: AgentExecuteRequest):
+    """
+    Execute one or more agents with parallel processing support.
+    Optimized for high performance through concurrent execution.
+    """
+    start_time = time.time()
+    
+    try:
+        if request.parallel and len(request.agent_names) > 1:
+            # Execute agents in parallel for maximum performance
+            results = await enhanced_agent_manager.execute_agents_parallel(
+                request.agent_names, 
+                request.context
+            )
+            
+            # Format results
+            agent_responses = []
+            for agent_name, result in results.items():
+                if isinstance(result, dict) and 'error' in result:
+                    status = "error"
+                    error = result['error']
+                    result_data = None
+                else:
+                    status = "success"
+                    error = None
+                    result_data = result
+                
+                agent_responses.append(AgentResponse(
+                    agent_name=agent_name,
+                    status=status,
+                    result=result_data,
+                    error=error,
+                    execution_time=time.time() - start_time,
+                    timestamp=datetime.utcnow().isoformat()
+                ))
+            
+            return {
+                "results": [resp.dict() for resp in agent_responses],
+                "execution_mode": "parallel",
+                "total_execution_time": time.time() - start_time,
+                "agents_executed": len(request.agent_names)
+            }
+        
+        else:
+            # Sequential execution for single agent or when parallel=False
+            results = []
+            for agent_name in request.agent_names:
+                agent_start = time.time()
+                try:
+                    result = await enhanced_agent_manager.execute_agent(
+                        agent_name, 
+                        request.context
+                    )
+                    
+                    results.append(AgentResponse(
+                        agent_name=agent_name,
+                        status="success",
+                        result=result,
+                        execution_time=time.time() - agent_start,
+                        timestamp=datetime.utcnow().isoformat()
+                    ))
+                    
+                except Exception as e:
+                    results.append(AgentResponse(
+                        agent_name=agent_name,
+                        status="error",
+                        error=str(e),
+                        execution_time=time.time() - agent_start,
+                        timestamp=datetime.utcnow().isoformat()
+                    ))
+            
+            return {
+                "results": [resp.dict() for resp in results],
+                "execution_mode": "sequential",
+                "total_execution_time": time.time() - start_time,
+                "agents_executed": len(request.agent_names)
+            }
+    
+    except Exception as e:
+        logger.error(f"Agent execution failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/agents/status")
+async def get_agents_status(agent_names: Optional[str] = None):
+    """
+    Get status of agents with parallel status checking for performance.
+    """
+    try:
+        if agent_names:
+            # Parse comma-separated agent names
+            names_list = [name.strip() for name in agent_names.split(',')]
+            
+            # Get status in parallel
+            status_results = await enhanced_agent_manager.get_agent_status_parallel(names_list)
+            
+            return {
+                "agents": [
+                    {"name": name, **status} 
+                    for name, status in status_results.items()
+                ],
+                "total_count": len(names_list),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        
+        else:
+            # Get all agent statuses
+            all_agents = ['vault-analyzer', 'synthesis-assistant', 'context-optimizer', 
+                         'suggestion-engine', 'research-assistant']
+            
+            status_results = await enhanced_agent_manager.get_agent_status_parallel(all_agents)
+            
+            agents_data = [
+                {"name": name, **status} 
+                for name, status in status_results.items()
+            ]
+            
+            enabled_count = sum(1 for agent in agents_data if agent.get('enabled', False))
+            
+            return AgentListResponse(
+                agents=agents_data,
+                total_count=len(agents_data),
+                enabled_count=enabled_count
+            ).dict()
+    
+    except Exception as e:
+        logger.error(f"Failed to get agent status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/agents/vault-analyze")
+async def analyze_vault():
+    """
+    Trigger comprehensive vault analysis with parallel processing.
+    Returns detailed analysis results in real-time.
+    """
+    try:
+        # Execute vault analyzer with full parallel processing
+        result = await enhanced_agent_manager.execute_agent(
+            'vault-analyzer', 
+            {'analysis_type': 'comprehensive'}
+        )
+        
+        return {
+            "analysis": result,
+            "timestamp": datetime.utcnow().isoformat(),
+            "performance_optimized": True
+        }
+    
+    except Exception as e:
+        logger.error(f"Vault analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/agents/synthesize")
+async def agent_synthesize(request: SynthesisRequest):
+    """
+    Create synthesis using the synthesis assistant agent.
+    Leverages parallel processing for multi-document analysis.
+    """
+    try:
+        context = {
+            'documents': request.note_paths,
+            'synthesis_type': request.synthesis_type,
+            'parallel_analysis': True
+        }
+        
+        result = await enhanced_agent_manager.execute_agent(
+            'synthesis-assistant',
+            context
+        )
+        
+        return {
+            "synthesis_result": result,
+            "documents_processed": len(request.note_paths),
+            "synthesis_type": request.synthesis_type,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Agent synthesis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/agents/optimize-context")
+async def optimize_context():
+    """
+    Trigger context optimization with parallel performance analysis.
+    """
+    try:
+        result = await enhanced_agent_manager.execute_agent(
+            'context-optimizer',
+            {'optimization_mode': 'comprehensive'}
+        )
+        
+        return {
+            "optimization_result": result,
+            "timestamp": datetime.utcnow().isoformat(),
+            "performance_boost": "enabled"
+        }
+    
+    except Exception as e:
+        logger.error(f"Context optimization failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/agents/health")
+async def agents_health_check():
+    """
+    Health check endpoint for agent system with parallel monitoring.
+    """
+    try:
+        # Check all critical agents in parallel
+        critical_agents = ['vault-analyzer', 'synthesis-assistant', 'context-optimizer']
+        
+        health_results = await enhanced_agent_manager.get_agent_status_parallel(critical_agents)
+        
+        all_healthy = all(
+            not isinstance(result, dict) or 'error' not in result
+            for result in health_results.values()
+        )
+        
+        return {
+            "status": "healthy" if all_healthy else "degraded",
+            "agents": health_results,
+            "parallel_execution": "enabled",
+            "redis_available": enhanced_agent_manager.redis_client is not None,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    
+    except Exception as e:
+        return {
+            "status": "error", 
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
 
 
 if __name__ == "__main__":

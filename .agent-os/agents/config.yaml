@@ -1,8 +1,9 @@
 # Agent OS Configuration for Obsidian Copilot Claude-Exclusive Edition
 # This file defines the autonomous agents that enhance your knowledge synthesis capabilities
 
-version: 1.0.0
+version: 2.0.0
 last_updated: 2025-08-18
+environment: production
 
 # Global agent settings
 global:
