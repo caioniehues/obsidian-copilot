@@ -639,6 +639,39 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Claude CLI** - Anthropic's terms of service
 - **Dependencies** - Various open-source licenses (see package.json)
 
+## 🐛 Troubleshooting
+
+### Dependency Installation Issues (Fixed in Latest Version)
+
+If you encounter npm installation errors with older versions, the issue has been resolved by upgrading:
+- **TypeScript**: 4.7.4 → 4.8.4 (fixes msw compatibility)
+- **@types/node**: v16 → v18 (fixes peer dependency conflicts)
+
+**Solution**: Pull the latest changes and run:
+```bash
+cd plugin
+rm -rf node_modules package-lock.json
+npm install
+npm run build
+```
+
+### Common Issues
+
+**Claude CLI Not Found**
+- Ensure Claude Code CLI is installed: `claude --version`
+- Add Claude to your PATH if needed
+- Restart Obsidian after installation
+
+**Build Failures**
+- Use Node.js v16 or higher
+- Clear npm cache: `npm cache clean --force`
+- Try with legacy peer deps: `npm install --legacy-peer-deps`
+
+**Plugin Not Loading**
+- Check Obsidian console for errors (Ctrl+Shift+I / Cmd+Option+I)
+- Verify plugin files are in `.obsidian/plugins/obsidian-copilot/`
+- Enable the plugin in Settings → Community plugins
+
 ## 🙏 Acknowledgments
 
 This plugin builds on the excellent work of:
