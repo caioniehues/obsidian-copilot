@@ -4,32 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Obsidian Copilot is a retrieval-augmented generation (RAG) system for Obsidian that helps users draft content based on their vault notes. It consists of two main components:
-1. **Obsidian Plugin** (TypeScript) - Frontend UI that integrates with Obsidian editor
-2. **FastAPI Backend** (Python) - Retrieval service using OpenSearch and semantic search
+Obsidian Copilot is a streamlined TypeScript plugin for Obsidian that provides intelligent document chat and generation capabilities using Claude or OpenAI APIs directly.
+
+**Key Features:**
+- **Direct API Integration**: Communicates directly with Claude/OpenAI APIs
+- **H2 Header Detection**: Auto-generates content when typing `##` headers
+- **Vault Context**: Uses entire vault as context for intelligent responses
+- **Document Display**: Shows retrieved context in a dedicated pane
+- **Plugin Settings**: Configure API keys and preferences within Obsidian
+
+## Architecture
+
+### Simplified Plugin-Only Design
+- **Single Plugin**: TypeScript-based Obsidian plugin (`/plugin/` directory)
+- **Direct API Calls**: No backend service required - plugin calls APIs directly
+- **Vault Processing**: Plugin reads and processes Obsidian vault content locally
+- **Context Assembly**: Assembles relevant context from vault for AI queries
 
 ## Essential Commands
 
-### Initial Setup
+### Plugin Setup
 ```bash
-# Set environment variables (required)
+# Set environment variable (required for Makefile)
 export OBSIDIAN_PATH=/path/to/obsidian-vault/  # Note: trailing slash is required
-export TRANSFORMER_CACHE=/path/to/.cache/huggingface/hub
 
-# Build Docker image
-make build
+# Complete plugin setup and installation
+make setup-plugin
 
-# Start OpenSearch container (wait for initialization)
-make opensearch
-
-# Build search indices (run in separate terminal)
-make build-artifacts
-
-# Run the backend service
-make run
-
-# Install plugin to Obsidian
-make install-plugin
+# Development setup only
+make dev-setup
 ```
 
 ### Development Commands
@@ -37,81 +40,138 @@ make install-plugin
 #### Plugin Development
 ```bash
 # Build plugin
-cd plugin && npm run build
+make build-plugin
 
 # Development mode (auto-rebuild)
-cd plugin && npm run dev
+make dev-plugin
+
+# Install plugin to Obsidian
+make install-plugin
 
 # Sync plugin changes from Obsidian back to repo
 make sync-plugin
 ```
 
-#### Backend Development
+### Testing Commands
+
+#### Plugin Testing (TypeScript)
 ```bash
-# Run backend locally (without Docker)
-make app-local
+# Run all tests
+make test-plugin
 
-# Run backend in Docker with hot reload
-make app
+# Watch mode for continuous testing
+make test-plugin-watch
 
-# Interactive development shell
-make dev
+# Generate coverage report (requires 90% coverage)
+make test-plugin-coverage
 ```
 
-## Architecture & Key Components
+Coverage reports are generated in `plugin/coverage/` with HTML reports at `plugin/coverage/lcov-report/index.html`.
 
-### Retrieval System
-The backend implements dual retrieval:
-- **OpenSearch** (`src/prep/build_opensearch_index.py`): BM25 keyword search
-- **Semantic Search** (`src/prep/build_semantic_index.py`): Using E5-small-v2 embeddings
+## Key Implementation Details
 
-Both indices are built from the Obsidian vault and stored in `/data/`:
-- `vault_dict.pickle` - Document chunks dictionary
-- `doc_embeddings_array.npy` - Semantic embeddings
-- `embedding_index.pickle` - Embedding to document mapping
+### Plugin Configuration
+- **API Keys**: Set in Obsidian Settings → Community Plugins → Copilot
+- **Supported APIs**: Both Anthropic Claude and OpenAI
+- **No Backend**: Plugin operates entirely standalone
 
-### Plugin → Backend Communication
-- Plugin sends queries to `http://localhost:8000`
-- Endpoints:
-  - `POST /query` - Main retrieval endpoint
-  - `POST /reflect_week` - Weekly reflection feature
-- OpenAI API calls are made from the plugin, not the backend
+### Document Processing
+- **Vault Reading**: Plugin directly reads `.md` files from vault
+- **Context Assembly**: Intelligently selects relevant documents for context
+- **Source Attribution**: Context includes `([source](filename.md))` references
+- **Real-time Generation**: Streams responses from Claude/OpenAI APIs
 
-### Key Integration Points
-1. **Editor Hook** (`plugin/main.ts`): Monitors for H2 headers (##) and triggers generation
-2. **Retrieved Docs Display**: Opens in separate pane (`Retrieved docs.md`)
-3. **Streaming Response**: Uses OpenAI streaming API for real-time generation
+### Testing Infrastructure
+- **Coverage Requirements**: 90% minimum coverage with Jest
+- **TypeScript Support**: Full TypeScript testing with proper type checking
+- **Mock Strategy**: Comprehensive mocking of Obsidian API
+- **Fast Execution**: Tests run locally without external dependencies
 
-## Important Implementation Details
+## Common Development Tasks
 
-- The plugin expects OpenAI API key in settings (not backend)
-- Document chunking preserves markdown structure and links
-- Retrieved context includes source links in format `([source](filename.md))`
-- The system uses `intfloat/e5-small-v2` model (max 512 tokens)
-- OpenSearch runs in single-node mode on port 9200
-- Backend serves on port 8000 with CORS enabled for `app://obsidian.md`
-
-## Common Tasks
-
-### Rebuilding Indices After Vault Changes
+### Plugin Development Workflow
 ```bash
-make opensearch  # Start OpenSearch
-# In another terminal:
-make build-artifacts  # Rebuild indices
+# 1. Setup development environment
+make dev-setup
+
+# 2. Start development mode
+make dev-plugin
+
+# 3. Make changes to plugin code
+# Changes auto-rebuild and can be tested in Obsidian
+
+# 4. Run tests
+make test-plugin
+
+# 5. Install to Obsidian for testing
+make install-plugin
 ```
 
-### Updating Plugin Settings
-Edit default settings in `plugin/main.ts:DEFAULT_SETTINGS`
+### Debugging Common Issues
 
-### Debugging Retrieval Issues
-1. Check OpenSearch is running: `curl localhost:9200`
-2. Verify indices exist in `/data/` directory
-3. Check backend logs for query processing
-4. Ensure OBSIDIAN_PATH has trailing slash
+#### Plugin Issues
+1. Check browser developer tools in Obsidian (Ctrl+Shift+I)
+2. Verify API keys in plugin settings: Settings → Community Plugins → Copilot
+3. Check console for error messages
+4. Verify plugin is enabled in Community Plugins list
 
-## Docker vs Podman
-The project supports both Docker and Podman. Set runtime with:
-```bash
-export RUNTIME=podman  # or docker (default)
+#### API Connection Issues
+1. Verify API keys are correctly set in plugin settings
+2. Check network connectivity
+3. Verify API key permissions and rate limits
+4. Test with different models if available
+
+## Project Structure
+
 ```
-- CRITICAL: ALWAYS USE MULTIPLE PARALLEL TASKS AND AGENTS FOR GREAT PERFORMANCE
+obsidian-copilot/
+├── plugin/                 # Main TypeScript plugin
+│   ├── src/               # Plugin source code
+│   ├── tests/             # Jest test files
+│   ├── main.ts            # Main plugin entry point
+│   ├── manifest.json      # Plugin manifest
+│   ├── package.json       # Dependencies and scripts
+│   └── styles.css         # Plugin styles
+├── .agent-os/             # Agent OS configuration (preserved)
+├── docs/                  # Documentation
+├── CLAUDE.md              # This file
+├── README.md              # Project README
+└── Makefile              # Build and development commands
+```
+
+## Removed Components
+
+The following Python backend and Docker infrastructure has been removed to simplify the project:
+
+**Removed Directories:**
+- `src/` - Python backend code
+- `tests/` - Python test suite  
+- `venv/` - Python virtual environment
+- `data/` - Search indices and artifacts
+- `monitoring/` - Monitoring configurations
+- `scripts/` - Backend scripts
+
+**Removed Files:**
+- `Dockerfile` and `docker-compose*.yml` - Container infrastructure
+- `requirements*.txt` - Python dependencies
+- `pytest.ini` - Python testing configuration
+- `setup.sh` and `build.sh` - Backend setup scripts
+- `.python-version` and `.pre-commit-config.yaml` - Python tooling
+- `.github/workflows/python_app.yml` - Python CI workflow
+
+**Updated Files:**
+- `Makefile` - Simplified to plugin-only commands
+- `.gitignore` - Removed Python-specific entries
+- `.env.example` - Updated for plugin-only configuration
+
+## Migration Notes
+
+This project has been simplified from a complex Python backend + TypeScript plugin architecture to a streamlined TypeScript plugin-only approach. The plugin now:
+
+1. **Operates Standalone**: No backend service required
+2. **Direct API Integration**: Calls Claude/OpenAI APIs directly
+3. **Simplified Setup**: Single `make setup-plugin` command
+4. **Faster Development**: No container builds or Python dependencies
+5. **Easier Maintenance**: Single codebase in TypeScript
+
+The core functionality remains the same - intelligent document chat and generation within Obsidian.

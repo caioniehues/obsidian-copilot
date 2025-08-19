@@ -1,157 +1,120 @@
-# 📚 Obsidian Copilot Documentation
+# 📚 Obsidian Claude CLI Chat Plugin Documentation
 
-> Complete documentation for Obsidian Copilot with Claude + Agent OS
+> Complete documentation for the streamlined Claude CLI integration plugin
 
 ## 🚀 Quick Links
 
-| Getting Started | Core Features | Advanced | Specialized |
-|-----------------|---------------|----------|-------------|
-| [Installation Guide](./setup/installation.md) | [Basic Usage](./usage/basic-usage.md) | [Agent Commands](./usage/agent-commands.md) | [Claude Features](./features/claude-features.md) |
-| [Quick Start (5 min)](./setup/quick-start.md) | [Getting Started](./usage/getting-started.md) | [Advanced Features](./usage/advanced-features.md) | [Migration Guide](./migration/migration-guide.md) |
-| [Requirements](./setup/requirements.md) | [Daily Workflows](./usage/basic-usage.md#daily-workflows) | [API Reference](./architecture/api-reference.md) | [Troubleshooting](./troubleshooting/common-issues.md) |
+| Getting Started | Core Features | Technical | Support |
+|-----------------|---------------|-----------|----------|
+| [Installation](./INSTALLATION.md) | [Usage Guide](./USAGE.md) | [Architecture](./ARCHITECTURE.md) | [Troubleshooting](./TROUBLESHOOTING.md) |
+| [Setup Process](./INSTALLATION.md#installation) | [Chat Interface](./USAGE.md#basic-chat-workflow) | [Implementation](./IMPLEMENTATION.md) | [FAQ](./TROUBLESHOOTING.md#common-issues-and-solutions) |
+| [Requirements](./INSTALLATION.md#requirements) | [Settings](./USAGE.md#settings-configuration) | [Testing](./TESTING.md) | [Community Support](./TROUBLESHOOTING.md#community-support) |
 
-## 📖 Documentation Structure
+## 📖 Documentation Overview
 
-### 🛠️ Setup & Installation
-- **[Requirements](./setup/requirements.md)** - System requirements and prerequisites
-- **[Installation Guide](./setup/installation.md)** - Complete step-by-step setup
-- **[Quick Start](./setup/quick-start.md)** - Get running in 5 minutes
+### 🏁 Getting Started
+- **[Installation Guide](./INSTALLATION.md)** - Step-by-step setup process
+- **[Usage Guide](./USAGE.md)** - Complete user manual with examples
+- **[Troubleshooting](./TROUBLESHOOTING.md)** - Common issues and solutions
 
-### 👤 Usage Guides
-- **[Getting Started](./usage/getting-started.md)** - Your first 10 minutes
-- **[Basic Usage](./usage/basic-usage.md)** - Core features and commands
-- **[Agent Commands](./usage/agent-commands.md)** - Complete agent reference
-- **[Advanced Features](./usage/advanced-features.md)** - Power user features
+### 🔧 Technical Documentation
+- **[Architecture](./ARCHITECTURE.md)** - System design and plugin structure
+- **[Implementation](./IMPLEMENTATION.md)** - Development details and code structure  
+- **[Testing Guide](./TESTING.md)** - Test-driven development approach
+- **[API Reference](./API.md)** - Plugin APIs and integration points
 
-### 🤖 Agent Documentation
-- **[Agent Overview](./agents/overview.md)** - Understanding the Agent OS
-- **[API Reference](./agents/api-reference.md)** - Complete Agent OS API documentation
-- **[Troubleshooting](./agents/troubleshooting.md)** - Advanced troubleshooting and configuration
-- **[Vault Analyzer](./agents/vault-analyzer.md)** - Autonomous vault analysis
-- **[Synthesis Assistant](./agents/synthesis.md)** - Multi-document synthesis
-- **[Context Optimizer](./agents/context-optimizer.md)** - Performance optimization
-- **[Suggestion Engine](./agents/suggestions.md)** - Proactive recommendations
-- **[Research Assistant](./agents/research.md)** - Deep research capabilities
-
-### 🏗️ Architecture & Technical
-- **[System Design](./architecture/system-design.md)** - Architecture overview
-- **[Agent Memory](./architecture/agent-memory.md)** - How agents learn
-- **[API Reference](./architecture/api-reference.md)** - Complete API documentation
-
-### ⭐ Claude-Exclusive Features
-- **[Claude Features](./features/claude-features.md)** - 200K context window, advanced analysis, and Claude-specific capabilities
-- **[Migration Guide](./migration/migration-guide.md)** - Upgrading from OpenAI-only version to Claude integration
-
-### 🔧 Troubleshooting & Support
-- **[Common Issues](./troubleshooting/common-issues.md)** - Solutions to frequent problems with enhanced debugging
-- **[Agent Troubleshooting](./agents/troubleshooting.md)** - Advanced agent diagnostics and configuration
-- **[FAQ](./troubleshooting/faq.md)** - Frequently asked questions
+### 📝 Change Documentation
+- **[Changelog](./CHANGELOG.md)** - Version history and updates
+- **[Transformation](./TRANSFORMATION.md)** - RAG → Local CLI migration details
 
 ## 🎯 Start Here
 
 ### New Users
-1. Check [Requirements](./setup/requirements.md)
-2. Follow [Installation Guide](./setup/installation.md)
-3. Read [Getting Started](./usage/getting-started.md)
-4. Explore [Basic Usage](./usage/basic-usage.md)
-
-### Experienced Users
-1. Use [Quick Start](./setup/quick-start.md)
-2. Jump to [Agent Commands](./usage/agent-commands.md)
-3. Explore [Advanced Features](./usage/advanced-features.md)
-4. Try [Claude Features](./features/claude-features.md)
-
-### Migrating Users
-1. Review [Migration Guide](./migration/migration-guide.md)
-2. Understand [Claude Features](./features/claude-features.md)
-3. Configure backend preferences
-4. Test both OpenAI and Claude backends
+1. Check [Requirements](./INSTALLATION.md#requirements)
+2. Follow [Installation Guide](./INSTALLATION.md#installation)  
+3. Read [Usage Guide](./USAGE.md#opening-the-chat-panel)
+4. Configure [Settings](./USAGE.md#settings-configuration)
 
 ### Developers
-1. Review [System Design](./architecture/system-design.md)
-2. Check [Agent API Reference](./agents/api-reference.md)
-3. Understand [Agent Memory](./architecture/agent-memory.md)
-4. Use [Advanced Troubleshooting](./agents/troubleshooting.md)
+1. Review [Architecture](./ARCHITECTURE.md)
+2. Understand [Implementation](./IMPLEMENTATION.md)
+3. Set up [Testing Environment](./TESTING.md)
+4. Check [API Reference](./API.md)
 
 ## 🌟 Key Features
 
-### Claude Integration
-- **200K context window** - Process entire books and research collections
-- **Three context strategies** - Full docs, smart chunks, and hierarchical
-- **Local processing via CLI** - No API key required for Claude
-- **Advanced analysis** - Vault-wide insights and multi-document synthesis
-- [→ Learn more about Claude features](./features/claude-features.md)
+### Local Claude CLI Integration
+- **Zero Configuration** - Works immediately with Claude CLI installed
+- **Complete Privacy** - All processing happens locally on your machine
+- **No API Keys Required** - Uses your existing Claude Code subscription
+- **Real-time Streaming** - Live responses as Claude generates them
 
-### Agent OS
-- **5 specialized autonomous agents** - Vault Analyzer, Synthesis Assistant, Context Optimizer, Suggestion Engine, Research Assistant
-- **Continuous learning via Basic Memory** - Agents build understanding over time  
-- **Pattern detection and insights** - Proactive discovery of knowledge connections
-- **Configurable automation** - Customizable agent behavior and scheduling
-- [→ Explore agent capabilities](./agents/overview.md)
+### Simplified Architecture
+- **Single Plugin** - No backend services or containers required  
+- **Direct Communication** - Plugin → Claude CLI → Claude API
+- **Lightweight** - Minimal resource usage and fast startup
+- **Reliable** - Single point of communication reduces failure modes
 
-### RAG System
-- **Dual search (OpenSearch + Semantic)** - Keyword and meaning-based retrieval
-- **Graph-aware retrieval** - Understands document relationships
-- **Smart chunking strategies** - Preserves context and structure
-- **Performance optimization** - Caching and efficient indexing
-- [→ Technical details](./architecture/system-design.md)
+### Smart Vault Integration  
+- **Configurable Access** - Choose exactly what Claude can see
+- **Context-Aware** - Optional vault integration for informed responses
+- **Safe by Default** - Vault access requires explicit user permission
+- **Performance Optimized** - Efficient context processing
 
-## 📊 System Overview
+## 📊 Architecture Overview
 
 ```mermaid
-graph TD
-    A[Obsidian Plugin] --> B[FastAPI Backend]
-    B --> C[Claude CLI]
-    B --> D[RAG Engine]
-    B --> E[Agent OS]
-    E --> F[5 Agents]
-    F --> G[Basic Memory]
-    G --> H[Learning & Improvement]
+graph LR
+    A[Obsidian Plugin] --> B[Claude CLI]
+    B --> C[Claude API]
+    A --> D[Vault Content]
+    D --> A
+    C --> B
+    B --> A
 ```
 
 ## 🔗 External Resources
 
 ### Related Projects
-- [Original Obsidian Copilot](https://github.com/logancyang/obsidian-copilot) - Original OpenAI-only version
-- [Basic Memory MCP](https://github.com/waldzx/basic-memory) - Agent memory system
-- [Claude by Anthropic](https://claude.ai) - AI assistant with 200K context
-- [Claude Code CLI](https://claude.ai/code) - Local Claude integration
+- [Original Obsidian Copilot](https://github.com/logancyang/obsidian-copilot) - Original complex RAG system
+- [Claude Code CLI](https://claude.ai/code) - Local Claude integration tool
+- [Obsidian Plugin Development](https://docs.obsidian.md/Plugins) - Official plugin documentation
 
 ### Community & Support
 - [GitHub Issues](https://github.com/caioniehues/obsidian-copilot/issues) - Bug reports and feature requests
 - [Discussions](https://github.com/caioniehues/obsidian-copilot/discussions) - Community Q&A and ideas
-- [Troubleshooting Guide](./troubleshooting/common-issues.md) - Solutions to common problems
+- [Obsidian Forum](https://forum.obsidian.md) - General Obsidian support
 
 ## 📝 Documentation Status
 
-| Section | Status | Last Updated | Files |
-|---------|--------|--------------|-------|
-| Setup & Installation | ✅ Complete | 2025-08-18 | 3 guides |
-| Usage Guides | ✅ Complete | 2025-08-18 | 4 guides |
-| Agent Documentation | ✅ Complete | 2025-08-18 | 8 guides |
-| Architecture | ✅ Complete | 2025-08-18 | 3 references |
-| Claude Features | ✅ Complete | 2025-08-18 | 1 comprehensive guide |
-| Migration Guide | ✅ Complete | 2025-08-18 | 1 step-by-step guide |
-| Troubleshooting | ✅ Complete | 2025-08-18 | 3 diagnostic guides |
+| Document | Status | Last Updated | Description |
+|----------|--------|--------------|-------------|
+| [Installation](./INSTALLATION.md) | ✅ Complete | 2025-08-19 | Setup and configuration guide |
+| [Usage](./USAGE.md) | ✅ Complete | 2025-08-19 | Complete user manual |
+| [Architecture](./ARCHITECTURE.md) | ✅ Complete | 2025-08-19 | Technical system overview |
+| [Implementation](./IMPLEMENTATION.md) | ✅ Complete | 2025-08-19 | Development documentation |
+| [Testing](./TESTING.md) | ✅ Complete | 2025-08-19 | TDD approach and test coverage |
+| [Troubleshooting](./TROUBLESHOOTING.md) | ✅ Complete | 2025-08-19 | Issue resolution guide |
+| [API Reference](./API.md) | ✅ Complete | 2025-08-19 | Plugin APIs and interfaces |
+| [Changelog](./CHANGELOG.md) | ✅ Complete | 2025-08-19 | Version history |
+| [Transformation](./TRANSFORMATION.md) | ✅ Complete | 2025-08-19 | Migration documentation |
 
-## 🤝 Contributing to Docs
+## 🤝 Contributing to Documentation
 
 Found an issue or want to improve documentation?
-1. Check existing [issues](https://github.com/caioniehues/obsidian-copilot/issues)
-2. Submit corrections via pull request
-3. Suggest improvements in discussions
-4. Help translate or add examples
 
-### Documentation Structure
-All documentation follows a clear hierarchy:
-- **Setup** - Installation and configuration
-- **Usage** - User guides and workflows  
-- **Agents** - Agent-specific documentation
-- **Architecture** - Technical references
-- **Features** - Claude-specific capabilities
-- **Migration** - Upgrade instructions
-- **Troubleshooting** - Problem resolution
+1. **Report Issues** - Use [GitHub Issues](https://github.com/caioniehues/obsidian-copilot/issues) for bugs or suggestions
+2. **Submit Changes** - Create pull requests for corrections or improvements  
+3. **Join Discussions** - Participate in [GitHub Discussions](https://github.com/caioniehues/obsidian-copilot/discussions)
+4. **Help Others** - Answer questions in the community
+
+### Documentation Guidelines
+- Keep language clear and concise
+- Include practical examples
+- Update related documents when making changes
+- Test all installation and usage instructions
+- Follow the existing structure and style
 
 ---
 
-**Navigation**: [Home](../README.md) | [Setup →](./setup/installation.md) | [Quick Start →](./setup/quick-start.md)
+**Navigation**: [Main README →](../README.md) | [Installation →](./INSTALLATION.md) | [Usage →](./USAGE.md)

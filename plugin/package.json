@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "obsidian-claude-cli-chat",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Chat with local Claude Code CLI directly from Obsidian. No API keys required - uses your local Claude installation for seamless vault integration.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
@@ -12,8 +12,8 @@
 		"test:coverage": "jest --coverage",
 		"test:ci": "jest --ci --coverage --watchAll=false"
 	},
-	"keywords": [],
-	"author": "",
+	"keywords": ["obsidian", "claude", "cli", "local", "chat", "ai", "assistant", "no-api"],
+	"author": "Claude Code Integration",
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
@@ -34,8 +34,5 @@
 		"jest-junit": "^16.0.0",
 		"identity-obj-proxy": "^3.0.0"
 	},
-	"dependencies": {
-		"@codemirror/state": "^6.2.1",
-		"@codemirror/view": "^6.13.0"
-	}
+	"dependencies": {}
 }

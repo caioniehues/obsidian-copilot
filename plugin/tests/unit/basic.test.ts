@@ -2,6 +2,8 @@
  * Basic test to verify Jest configuration works
  */
 
+export {};
+
 describe('Basic Jest Configuration', () => {
   it('should run TypeScript tests', () => {
     expect(true).toBe(true);

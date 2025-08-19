@@ -24,238 +24,261 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => CopilotPlugin
+  ClaudeChatPlugin: () => ClaudeChatPlugin,
+  default: () => main_default
 });
 module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
-var DEFAULT_SETTINGS = {
-  model: "gpt-3.5-turbo",
-  apiKey: "sk-xxxxxxxxxx",
-  systemContentDraftSection: "You are Obsidian-Copilot, a friendly AI assistant that helps writers craft drafts based on their notes.\n\nYour task is to generate a few paragraphs based on a given section heading and related context of documents. When you reference content from a document, append the sentence with a markdown reference that links to the document's title. For example, if a sentence references context from 'Augmented Language Models.md', it should end with ([source](Augmented%20Language%20Models.md)).",
-  systemContentDraftSectionNoContext: "You are Obsidian-Copilot, a friendly AI assistant that helps writers craft drafts based on their notes.\n\nYour task is to generate a few paragraphs based on a given section heading.",
-  systemContentReflectWeek: "You are a friendly AI therapist that helps users reflect on their week and evoke feelings of gratitude, positivity, joy for life. Given their journal entries, write a paragraph for each of the following:\n\n* Celebrate what went well\n* Reflect on areas for growth\n* Suggest goals for next week"
+
+// src/claude-cli-service.ts
+var import_child_process = require("child_process");
+var import_events = require("events");
+var ClaudeCLIService = class extends import_events.EventEmitter {
+  constructor() {
+    super();
+    this.currentProcess = null;
+    this.isProcessing = false;
+    this.partialData = "";
+    this.performanceMetrics = {
+      lastResponseTime: 0,
+      successCount: 0,
+      errorCount: 0,
+      averageResponseTime: 0
+    };
+    this.responseTimes = [];
+  }
+  /**
+   * Check if Claude CLI is available on the system
+   */
+  async checkCLIAvailability() {
+    return new Promise((resolve) => {
+      const process2 = (0, import_child_process.spawn)("claude", ["--version"]);
+      process2.on("close", (code) => {
+        resolve(code === 0);
+      });
+      process2.on("error", () => {
+        resolve(false);
+      });
+      setTimeout(() => {
+        process2.kill();
+        resolve(false);
+      }, 5e3);
+    });
+  }
+  /**
+   * Build Claude CLI command with options
+   */
+  buildCLICommand(options) {
+    const isWindows = process.platform === "win32";
+    const command = isWindows ? "claude.exe" : "claude";
+    const args = [];
+    if (options.sessionId) {
+      args.push("--session-id", options.sessionId);
+    }
+    if (options.vaultPath) {
+      args.push("--add-dir", options.vaultPath);
+    }
+    if (options.streaming !== false) {
+      args.push("--output-format", "stream-json");
+    }
+    if (options.allowedTools && options.allowedTools.length > 0) {
+      args.push("--allowedTools", options.allowedTools.join(","));
+    }
+    args.push(options.message);
+    return { command, args };
+  }
+  /**
+   * Parse streaming JSON response from Claude CLI
+   */
+  parseStreamResponse(data) {
+    const lines = data.split("\n").filter((line) => line.trim());
+    const responses = [];
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line);
+        responses.push(parsed);
+      } catch (error) {
+        continue;
+      }
+    }
+    return responses;
+  }
+  /**
+   * Handle partial stream chunks and return parsed responses
+   */
+  handleStreamChunk(chunk) {
+    this.partialData += chunk;
+    const lines = this.partialData.split("\n");
+    this.partialData = lines.pop() || "";
+    const responses = [];
+    for (const line of lines) {
+      if (line.trim()) {
+        try {
+          const parsed = JSON.parse(line);
+          responses.push(parsed);
+        } catch (error) {
+          continue;
+        }
+      }
+    }
+    return responses;
+  }
+  /**
+   * Start chat session with Claude CLI
+   */
+  async startChat(options, onResponse) {
+    if (this.isProcessing) {
+      throw new Error("Claude CLI is currently busy");
+    }
+    this.isProcessing = true;
+    const startTime = Date.now();
+    return new Promise((resolve, reject) => {
+      var _a, _b;
+      const command = this.buildCLICommand(options);
+      try {
+        this.currentProcess = (0, import_child_process.spawn)(command.command, command.args);
+      } catch (error) {
+        this.isProcessing = false;
+        reject(error);
+        return;
+      }
+      let hasEnded = false;
+      let errorOutput = "";
+      const timeout = options.timeout || 3e4;
+      const timeoutId = setTimeout(() => {
+        if (this.currentProcess && !hasEnded) {
+          this.currentProcess.kill("SIGTERM");
+          this.cleanup();
+          reject(new Error("Claude CLI process timed out"));
+        }
+      }, timeout);
+      (_a = this.currentProcess.stdout) == null ? void 0 : _a.on("data", (data) => {
+        const chunk = data.toString();
+        const responses = this.handleStreamChunk(chunk);
+        responses.forEach((response) => {
+          onResponse(response);
+          if (response.type === "end") {
+            hasEnded = true;
+          }
+        });
+      });
+      (_b = this.currentProcess.stderr) == null ? void 0 : _b.on("data", (data) => {
+        errorOutput += data.toString();
+      });
+      this.currentProcess.on("close", (code) => {
+        clearTimeout(timeoutId);
+        const responseTime = Date.now() - startTime;
+        this.updatePerformanceMetrics(responseTime, code === 0);
+        this.cleanup();
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Claude CLI process failed with exit code: ${code}${errorOutput ? "\n" + errorOutput : ""}`));
+        }
+      });
+      this.currentProcess.on("error", (error) => {
+        clearTimeout(timeoutId);
+        this.updatePerformanceMetrics(Date.now() - startTime, false);
+        this.cleanup();
+        reject(error);
+      });
+    });
+  }
+  /**
+   * Update performance metrics
+   */
+  updatePerformanceMetrics(responseTime, success) {
+    this.performanceMetrics.lastResponseTime = responseTime;
+    if (success) {
+      this.performanceMetrics.successCount++;
+    } else {
+      this.performanceMetrics.errorCount++;
+    }
+    this.responseTimes.push(responseTime);
+    if (this.responseTimes.length > 100) {
+      this.responseTimes.shift();
+    }
+    this.performanceMetrics.averageResponseTime = this.responseTimes.reduce((sum, time) => sum + time, 0) / this.responseTimes.length;
+  }
+  /**
+   * Get performance metrics
+   */
+  getPerformanceMetrics() {
+    return { ...this.performanceMetrics };
+  }
+  /**
+   * Cleanup resources
+   */
+  cleanup() {
+    if (this.currentProcess) {
+      this.currentProcess.removeAllListeners();
+      if (!this.currentProcess.killed) {
+        this.currentProcess.kill();
+      }
+      this.currentProcess = null;
+    }
+    this.isProcessing = false;
+    this.partialData = "";
+  }
+  /**
+   * Terminate current session
+   */
+  terminate() {
+    if (this.currentProcess && !this.currentProcess.killed) {
+      this.currentProcess.kill("SIGTERM");
+    }
+    this.cleanup();
+  }
 };
-var CopilotPlugin = class extends import_obsidian.Plugin {
+
+// main.ts
+var DEFAULT_SETTINGS = {
+  sessionTimeout: 3e4,
+  maxHistorySize: 100,
+  showPerformanceMetrics: true,
+  vaultIntegration: true,
+  allowedTools: ["read", "search"],
+  autoDetectCLI: true
+};
+var ClaudeChatPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
-    this.processing = false;
-  }
-  // Opens a new pane to display the retrieved docs
-  async openNewPane(content) {
-    const filename = "Retrieved docs.md";
-    let file = this.app.vault.getAbstractFileByPath(filename);
-    if (file) {
-      await this.app.vault.modify(file, content);
-    } else {
-      file = await this.app.vault.create(filename, content);
-    }
-    const existingLeaf = this.app.workspace.getLeavesOfType("markdown").find((leaf) => leaf.view.file && leaf.view.file.path === file.path);
-    if (existingLeaf) {
-      existingLeaf.view.editor.setValue(content);
-    } else {
-      const leaf = this.app.workspace.getLeaf("split", "vertical");
-      leaf.openFile(file);
-    }
-  }
-  async queryLLM(messages, model, temperature = 0.7) {
-    return await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${this.settings.apiKey}`
-      },
-      body: JSON.stringify({
-        "model": model,
-        "temperature": temperature,
-        "messages": messages,
-        "stream": true
-      })
-    });
+    this.cliAvailable = false;
+    this.chatHistory = [];
+    this.currentSessionId = null;
   }
   async onload() {
     await this.loadSettings();
-    async function read(reader, editor) {
-      let buffer = "";
-      const { value, done } = await reader.read();
-      if (done) {
-        statusBarItemEl.setText("Done with Copilot task!");
-        return;
+    this.cliService = new ClaudeCLIService();
+    if (this.settings.autoDetectCLI) {
+      this.cliAvailable = await this.cliService.checkCLIAvailability();
+      if (!this.cliAvailable) {
+        new import_obsidian.Notice("Claude CLI not found. Please install Claude Code for full functionality.");
       }
-      const decoded = new TextDecoder().decode(value);
-      buffer += decoded;
-      let start = 0;
-      let end = buffer.indexOf("\n");
-      while (end !== -1) {
-        const message = buffer.slice(start, end);
-        start = end + 1;
-        try {
-          const messageWithoutPrefix = message.replace("data: ", "");
-          const json = JSON.parse(messageWithoutPrefix);
-          let lastToken = "";
-          if (json.choices && json.choices.length > 0 && json.choices[0].delta && json.choices[0].delta.content) {
-            let token = json.choices[0].delta.content;
-            if (token === " ") {
-              lastToken += token;
-              token = lastToken;
-            } else {
-              lastToken = token;
-            }
-            editor.replaceSelection(token);
-          }
-        } catch (err) {
-        }
-        end = buffer.indexOf("\n", start);
-      }
-      buffer = buffer.slice(start);
-      requestAnimationFrame(() => read(reader, editor));
     }
-    const statusBarItemEl = this.addStatusBarItem();
-    statusBarItemEl.setText("Copilot loaded");
     this.addCommand({
-      id: "copilot-draft-section",
-      name: "Draft Section",
-      editorCallback: async (editor, view) => {
-        var _a;
-        const selection = editor.getSelection();
-        const query = selection.replace(/[^a-z0-9 ]/gi, "");
-        statusBarItemEl.setText("Running Copilot...");
-        const restResponse = await fetch(`http://0.0.0.0:8000/get_chunks?query=${encodeURIComponent(query)}`);
-        console.log("response", restResponse);
-        if (!restResponse.ok) {
-          console.error("An error occurred while fetching chunks", await restResponse.text());
-          statusBarItemEl.setText("ERROR: No response from retrieval API");
-          return;
-        }
-        const restData = await restResponse.json();
-        const retrievedDocs = [];
-        const relevantContent = [];
-        for (let i = 0; i < restData.length; i++) {
-          retrievedDocs.push(`[[${restData[i].title}]]
-
-${restData[i].chunk}`);
-          relevantContent.push(`Title: ${restData[i].title}
-Context: ${restData[i].chunk}
-`);
-        }
-        const retrievedDocsDisplay = retrievedDocs.join("\n---\n");
-        console.log(`PARSED RETRIEVED DOCS: 
-
-${retrievedDocsDisplay}`);
-        this.openNewPane(retrievedDocsDisplay);
-        const user_content = `Section heading: ${query}
-
-${relevantContent.join("---\n")}
-
-Draft:`;
-        console.log(`USER CONTENT:
-
-${user_content}`);
-        const messages = [
-          { "role": "system", "content": this.settings.systemContentDraftSection },
-          { "role": "user", "content": user_content }
-        ];
-        const response = await this.queryLLM(messages, this.settings.model, 0.7);
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("An error occurred", errorData);
-          statusBarItemEl.setText("ERROR: No response from LLM API");
-        } else {
-          const reader = (_a = response.body) == null ? void 0 : _a.getReader();
-          editor.replaceSelection(selection + "\n\n");
-          await read(reader, editor);
-        }
-      }
+      id: "open-chat",
+      name: "Open Chat Panel",
+      callback: () => this.openChatPanel()
     });
     this.addCommand({
-      id: "copilot-draft-section-no-context",
-      name: "Draft Section (no context)",
-      editorCallback: async (editor, view) => {
-        var _a;
-        const selection = editor.getSelection();
-        const query = selection.replace(/[^a-z0-9 ]/gi, "");
-        statusBarItemEl.setText("Running Copilot...");
-        const user_content = `Section heading: ${query}
-
-Draft:`;
-        console.log(`USER CONTENT:
-
-${user_content}`);
-        const messages = [
-          { "role": "system", "content": this.settings.systemContentDraftSectionNoContext },
-          { "role": "user", "content": user_content }
-        ];
-        const response = await this.queryLLM(messages, this.settings.model, 0.7);
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("An error occurred", errorData);
-          statusBarItemEl.setText("ERROR: No response from LLM API");
-        } else {
-          const reader = (_a = response.body) == null ? void 0 : _a.getReader();
-          editor.replaceSelection(selection + "\n\n");
-          await read(reader, editor);
-        }
-      }
+      id: "new-chat-session",
+      name: "Start New Chat Session",
+      callback: () => this.startNewSession()
     });
     this.addCommand({
-      id: "copilot-reflect-week",
-      name: "Reflect on the week",
-      editorCallback: async (editor, view) => {
-        var _a;
-        statusBarItemEl.setText("Running Copilot...");
-        const titleDateStr = view.file.basename;
-        const date = new Date(titleDateStr);
-        console.log(`Date: ${date.toISOString().slice(0, 10)}`);
-        let pastContent = "";
-        for (let i = 0; i < 7; i++) {
-          date.setDate(date.getDate() - 1);
-          const dateStr = date.toISOString().slice(0, 10);
-          const dailyNote = this.app.vault.getAbstractFileByPath(`daily/${dateStr}.md`);
-          console.log(`dateStr: ${dateStr}, dailyNote: ${dailyNote}`);
-          if (dailyNote && dailyNote instanceof import_obsidian.TFile) {
-            const noteContent = await this.app.vault.read(dailyNote);
-            console.log(`dateStr: ${dateStr}, dailyNote: ${dailyNote}, noteContent:
-
-${noteContent}`);
-            pastContent += `Date: ${dateStr}
-
-Journal entry:
-${noteContent}
----
-`;
-          }
-        }
-        console.log(`PAST JOURNAL ENTRIES: 
-
-${pastContent}`);
-        this.openNewPane(pastContent);
-        const user_content = `These are the journal entries for my week:
-${pastContent}
-
-Reflection:`;
-        console.log(`USER CONTENT:
-
-${user_content}`);
-        const messages = [
-          { "role": "system", "content": this.settings.systemContentReflectWeek },
-          { "role": "user", "content": user_content }
-        ];
-        const response = await this.queryLLM(messages, this.settings.model, 0.7);
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("An error occurred", errorData);
-          statusBarItemEl.setText("ERROR: No response from LLM API");
-        } else {
-          const reader = (_a = response.body) == null ? void 0 : _a.getReader();
-          editor.replaceSelection("\n");
-          await read(reader, editor);
-        }
-      }
+      id: "export-chat",
+      name: "Export Chat to Note",
+      callback: () => this.exportChatToNote()
     });
-    this.addSettingTab(new CopilotSettingTab(this.app, this));
-    this.registerDomEvent(document, "click", (evt) => {
-      console.log("click", evt);
-    });
-    this.registerInterval(window.setInterval(() => console.log("setInterval"), 5 * 60 * 1e3));
+    this.addSettingTab(new ClaudeChatSettingTab(this.app, this));
+    this.registerView("claude-chat", (leaf) => new ChatView(leaf, this));
+    this.startNewSession();
+  }
+  async onunload() {
+    if (this.cliService) {
+      this.cliService.cleanup();
+    }
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -263,8 +286,240 @@ ${user_content}`);
   async saveSettings() {
     await this.saveData(this.settings);
   }
+  // Session Management
+  generateSessionId() {
+    return `chat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+  startNewSession() {
+    this.currentSessionId = this.generateSessionId();
+    this.chatHistory = [];
+    this.app.workspace.getLeavesOfType("claude-chat").forEach((leaf) => {
+      leaf.view.onNewSession();
+    });
+  }
+  // Chat Panel Management
+  async openChatPanel() {
+    const existingLeaf = this.app.workspace.getLeavesOfType("claude-chat")[0];
+    if (existingLeaf) {
+      this.app.workspace.revealLeaf(existingLeaf);
+      existingLeaf.view.focus();
+    } else {
+      const leaf = this.app.workspace.getLeaf("split", "vertical");
+      await leaf.setViewState({
+        type: "claude-chat",
+        active: true
+      });
+    }
+  }
+  // Message Handling
+  async sendMessage(message) {
+    var _a, _b;
+    if (!this.cliAvailable) {
+      this.createNotice("Claude CLI is not available. Please install Claude Code.", "error");
+      return;
+    }
+    try {
+      const userMessage = {
+        type: "user",
+        content: message,
+        timestamp: new Date()
+      };
+      this.addToHistory(userMessage);
+      const options = {
+        message,
+        sessionId: this.currentSessionId || void 0,
+        streaming: true,
+        timeout: this.settings.sessionTimeout
+      };
+      if (this.settings.vaultIntegration) {
+        options.vaultPath = ((_b = (_a = this.app.vault.adapter.path) == null ? void 0 : _a.resolve) == null ? void 0 : _b.call(_a, ".")) || "/mock/vault";
+        options.allowedTools = this.settings.allowedTools;
+      }
+      let assistantContent = "";
+      const startTime = Date.now();
+      await this.cliService.startChat(options, (response) => {
+        this.handleStreamResponse(response, (content) => {
+          assistantContent += content;
+        });
+      });
+      if (assistantContent) {
+        const assistantMessage = {
+          type: "assistant",
+          content: assistantContent,
+          timestamp: new Date()
+        };
+        this.addToHistory(assistantMessage);
+      }
+      if (this.settings.showPerformanceMetrics) {
+        const responseTime = Date.now() - startTime;
+        console.log(`Claude response time: ${responseTime}ms`);
+      }
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      this.createNotice(
+        "Failed to communicate with Claude CLI. Please ensure Claude Code is installed.",
+        "error"
+      );
+    }
+  }
+  handleStreamResponse(response, onContent) {
+    switch (response.type) {
+      case "content":
+        if (response.content) {
+          onContent(response.content);
+          this.app.workspace.getLeavesOfType("claude-chat").forEach((leaf) => {
+            leaf.view.appendStreamingContent(response.content);
+          });
+        }
+        break;
+      case "end":
+        this.app.workspace.getLeavesOfType("claude-chat").forEach((leaf) => {
+          leaf.view.onStreamingComplete();
+        });
+        break;
+      case "error":
+        console.error("Claude CLI error:", response.error);
+        this.createNotice(`Claude error: ${response.error}`, "error");
+        break;
+    }
+  }
+  addToHistory(message) {
+    this.chatHistory.push(message);
+    if (this.chatHistory.length > this.settings.maxHistorySize) {
+      this.chatHistory = this.chatHistory.slice(-this.settings.maxHistorySize);
+    }
+    this.app.workspace.getLeavesOfType("claude-chat").forEach((leaf) => {
+      leaf.view.updateHistory(this.chatHistory);
+    });
+  }
+  // Export functionality
+  async exportChatToNote() {
+    if (this.chatHistory.length === 0) {
+      this.createNotice("No chat history to export.", "warning");
+      return;
+    }
+    const timestamp = new Date().toISOString().split("T")[0];
+    const filename = `Chat Export ${timestamp}.md`;
+    let content = `# Chat Export - ${new Date().toLocaleString()}
+
+`;
+    this.chatHistory.forEach((message, index) => {
+      const role = message.type === "user" ? "\u{1F464} User" : "\u{1F916} Claude";
+      content += `## ${role} (${message.timestamp.toLocaleTimeString()})
+
+${message.content}
+
+`;
+    });
+    try {
+      const file = await this.app.vault.create(filename, content);
+      this.createNotice(`Chat exported to ${filename}`, "success");
+      const leaf = this.app.workspace.getLeaf();
+      await leaf.openFile(file);
+    } catch (error) {
+      console.error("Failed to export chat:", error);
+      this.createNotice("Failed to export chat.", "error");
+    }
+  }
+  // Utility methods
+  createNotice(message, type = "info") {
+    new import_obsidian.Notice(message);
+  }
+  getPerformanceMetrics() {
+    return this.cliService.getPerformanceMetrics();
+  }
+  // Test helper methods
+  async executeCommand(commandId) {
+    const command = this.commands[commandId];
+    if (command && command.callback) {
+      await command.callback();
+    }
+  }
 };
-var CopilotSettingTab = class extends import_obsidian.PluginSettingTab {
+var ChatView = class extends import_obsidian.ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+  }
+  getViewType() {
+    return "claude-chat";
+  }
+  getDisplayText() {
+    return "Claude Chat";
+  }
+  async onOpen() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    const chatContainer = container.createEl("div", { cls: "claude-chat-container" });
+    chatContainer.createEl("h3", { text: "Claude Chat", cls: "chat-header" });
+    const messagesArea = chatContainer.createEl("div", { cls: "chat-messages" });
+    messagesArea.createEl("p", { text: "Chat interface will be implemented here", cls: "placeholder" });
+    const inputArea = chatContainer.createEl("div", { cls: "chat-input" });
+    const input = inputArea.createEl("input", { type: "text", placeholder: "Type a message...", cls: "message-input" });
+    const sendButton = inputArea.createEl("button", { text: "Send", cls: "send-button" });
+    sendButton.addEventListener("click", () => {
+      const message = input.value.trim();
+      if (message) {
+        this.plugin.sendMessage(message);
+        input.value = "";
+      }
+    });
+    input.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        sendButton.click();
+      }
+    });
+  }
+  async onClose() {
+  }
+  focus() {
+    const input = this.containerEl.querySelector(".message-input");
+    if (input) {
+      input.focus();
+    }
+  }
+  onNewSession() {
+    const messagesArea = this.containerEl.querySelector(".chat-messages");
+    if (messagesArea) {
+      messagesArea.empty();
+      messagesArea.createEl("p", { text: "New chat session started", cls: "session-notice" });
+    }
+  }
+  appendStreamingContent(content) {
+    const messagesArea = this.containerEl.querySelector(".chat-messages");
+    if (messagesArea) {
+      const lastMessage = messagesArea.querySelector(".message.assistant:last-child .content");
+      if (lastMessage) {
+        lastMessage.textContent += content;
+      } else {
+        const messageDiv = messagesArea.createEl("div", { cls: "message assistant" });
+        messageDiv.createEl("span", { cls: "role", text: "\u{1F916} Claude: " });
+        messageDiv.createEl("span", { cls: "content", text: content });
+      }
+    }
+  }
+  onStreamingComplete() {
+    const messagesArea = this.containerEl.querySelector(".chat-messages");
+    if (messagesArea) {
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+  }
+  updateHistory(history) {
+    const messagesArea = this.containerEl.querySelector(".chat-messages");
+    if (messagesArea) {
+      messagesArea.empty();
+      history.forEach((message) => {
+        const messageDiv = messagesArea.createEl("div", { cls: `message ${message.type}` });
+        const roleIcon = message.type === "user" ? "\u{1F464}" : "\u{1F916}";
+        messageDiv.createEl("span", { cls: "role", text: `${roleIcon} ${message.type === "user" ? "You" : "Claude"}: ` });
+        messageDiv.createEl("span", { cls: "content", text: message.content });
+        messageDiv.createEl("span", { cls: "timestamp", text: message.timestamp.toLocaleTimeString() });
+      });
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+  }
+};
+var ClaudeChatSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -272,27 +527,49 @@ var CopilotSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Settings for Obsidian Copilot" });
-    new import_obsidian.Setting(containerEl).setName("OpenAI API Key").setDesc("Enter your OpenAI API key").addText((text) => text.setPlaceholder("API Key").setValue(this.plugin.settings.apiKey).onChange(async (value) => {
-      this.plugin.settings.apiKey = value;
+    containerEl.createEl("h2", { text: "Claude Chat Settings" });
+    containerEl.createEl("h3", { text: "Claude CLI Configuration" });
+    new import_obsidian.Setting(containerEl).setName("Auto-detect Claude CLI").setDesc("Automatically check if Claude CLI is available on startup").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoDetectCLI).onChange(async (value) => {
+      this.plugin.settings.autoDetectCLI = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).setName("Model Name").setDesc("Enter the model used for generation").addText((text) => text.setPlaceholder("Model name").setValue(this.plugin.settings.model).onChange(async (value) => {
-      this.plugin.settings.model = value;
+    new import_obsidian.Setting(containerEl).setName("Session timeout").setDesc("Maximum time to wait for Claude CLI response (milliseconds)").addText((text) => text.setPlaceholder("30000").setValue(this.plugin.settings.sessionTimeout.toString()).onChange(async (value) => {
+      const timeout = parseInt(value);
+      if (!isNaN(timeout) && timeout > 0) {
+        this.plugin.settings.sessionTimeout = timeout;
+        await this.plugin.saveSettings();
+      }
+    }));
+    containerEl.createEl("h3", { text: "Vault Integration" });
+    new import_obsidian.Setting(containerEl).setName("Enable vault integration").setDesc("Allow Claude to access and analyze your vault content").addToggle((toggle) => toggle.setValue(this.plugin.settings.vaultIntegration).onChange(async (value) => {
+      this.plugin.settings.vaultIntegration = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).setName("System Prompt: Draft Section").setDesc("Define the prompt used for drafting a section with context").addText((text) => text.setPlaceholder("Prompt to draft a section").setValue(this.plugin.settings.systemContentDraftSection).onChange(async (value) => {
-      this.plugin.settings.systemContentDraftSection = value;
+    new import_obsidian.Setting(containerEl).setName("Allowed tools").setDesc("Comma-separated list of tools Claude can use (e.g., read,search,write)").addText((text) => text.setPlaceholder("read,search").setValue(this.plugin.settings.allowedTools.join(",")).onChange(async (value) => {
+      this.plugin.settings.allowedTools = value.split(",").map((tool) => tool.trim());
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).setName("System Prompt: Draft Section (without context)").setDesc("Define the prompt used for drafting a section without context").addText((text) => text.setPlaceholder("Prompt to draft a section (without context)").setValue(this.plugin.settings.systemContentDraftSectionNoContext).onChange(async (value) => {
-      this.plugin.settings.systemContentDraftSectionNoContext = value;
+    containerEl.createEl("h3", { text: "Chat Configuration" });
+    new import_obsidian.Setting(containerEl).setName("Max history size").setDesc("Maximum number of messages to keep in chat history").addText((text) => text.setPlaceholder("100").setValue(this.plugin.settings.maxHistorySize.toString()).onChange(async (value) => {
+      const size = parseInt(value);
+      if (!isNaN(size) && size > 0) {
+        this.plugin.settings.maxHistorySize = size;
+        await this.plugin.saveSettings();
+      }
+    }));
+    new import_obsidian.Setting(containerEl).setName("Show performance metrics").setDesc("Display response times and performance information in console").addToggle((toggle) => toggle.setValue(this.plugin.settings.showPerformanceMetrics).onChange(async (value) => {
+      this.plugin.settings.showPerformanceMetrics = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian.Setting(containerEl).setName("System Prompt: Reflect on the week").setDesc("Define the prompt used` to reflect on the week").addText((text) => text.setPlaceholder("Prompt to reflect on the week").setValue(this.plugin.settings.systemContentReflectWeek).onChange(async (value) => {
-      this.plugin.settings.systemContentReflectWeek = value;
-      await this.plugin.saveSettings();
-    }));
+    containerEl.createEl("h3", { text: "Status" });
+    const statusEl = containerEl.createEl("div", { cls: "claude-chat-status" });
+    const cliStatus = this.plugin.cliAvailable ? "\u2705 Available" : "\u274C Not Found";
+    statusEl.createEl("p", { text: `Claude CLI: ${cliStatus}` });
+    if (this.plugin.settings.showPerformanceMetrics && this.plugin.cliAvailable) {
+      const metrics = this.plugin.getPerformanceMetrics();
+      statusEl.createEl("p", { text: `Last Response Time: ${metrics.lastResponseTime}ms` });
+      statusEl.createEl("p", { text: `Success Rate: ${metrics.successCount}/${metrics.successCount + metrics.errorCount}` });
+    }
   }
 };
-//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsibWFpbi50cyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiaW1wb3J0IHsgQXBwLCBFZGl0b3IsIE1hcmtkb3duVmlldywgUGx1Z2luLCBQbHVnaW5TZXR0aW5nVGFiLCBTZXR0aW5nLCBURmlsZSB9IGZyb20gJ29ic2lkaWFuJztcblxuLy8gUmVtZW1iZXIgdG8gcmVuYW1lIHRoZXNlIGNsYXNzZXMgYW5kIGludGVyZmFjZXMhXG5pbnRlcmZhY2UgQ29waWxvdFBsdWdpblNldHRpbmdzIHtcblx0bW9kZWw6IHN0cmluZztcblx0YXBpS2V5OiBzdHJpbmc7XG5cdHN5c3RlbUNvbnRlbnREcmFmdFNlY3Rpb246IHN0cmluZztcblx0c3lzdGVtQ29udGVudERyYWZ0U2VjdGlvbk5vQ29udGV4dDogc3RyaW5nO1xuXHRzeXN0ZW1Db250ZW50UmVmbGVjdFdlZWs6IHN0cmluZztcbn1cblxuY29uc3QgREVGQVVMVF9TRVRUSU5HUzogQ29waWxvdFBsdWdpblNldHRpbmdzID0ge1xuXHRtb2RlbDogJ2dwdC0zLjUtdHVyYm8nLFxuXHRhcGlLZXk6ICdzay1XcXVkaEhvajB0clRLUjFBTDJvVlQzQmxia0ZKcVBXZktpdUpUU2M3dDZERjAySTUnLFxuXHRzeXN0ZW1Db250ZW50RHJhZnRTZWN0aW9uOiBcIllvdSBhcmUgT2JzaWRpYW4tQ29waWxvdCwgYSBmcmllbmRseSBBSSBhc3Npc3RhbnQgdGhhdCBoZWxwcyB3cml0ZXJzIGNyYWZ0IGRyYWZ0cyBiYXNlZCBvbiB0aGVpciBub3Rlcy5cXG5cXG5Zb3VyIHRhc2sgaXMgdG8gZ2VuZXJhdGUgYSBmZXcgcGFyYWdyYXBocyBiYXNlZCBvbiBhIGdpdmVuIHNlY3Rpb24gaGVhZGluZyBhbmQgcmVsYXRlZCBjb250ZXh0IG9mIGRvY3VtZW50cy4gV2hlbiB5b3UgcmVmZXJlbmNlIGNvbnRlbnQgZnJvbSBhIGRvY3VtZW50LCBhcHBlbmQgdGhlIHNlbnRlbmNlIHdpdGggYSBtYXJrZG93biByZWZlcmVuY2UgdGhhdCBsaW5rcyB0byB0aGUgZG9jdW1lbnQncyB0aXRsZS4gRm9yIGV4YW1wbGUsIGlmIGEgc2VudGVuY2UgcmVmZXJlbmNlcyBjb250ZXh0IGZyb20gJ0F1Z21lbnRlZCBMYW5ndWFnZSBNb2RlbHMubWQnLCBpdCBzaG91bGQgZW5kIHdpdGggKFtzb3VyY2VdKEF1Z21lbnRlZCUyMExhbmd1YWdlJTIwTW9kZWxzLm1kKSkuXCIsXG5cdHN5c3RlbUNvbnRlbnREcmFmdFNlY3Rpb25Ob0NvbnRleHQ6IFwiWW91IGFyZSBPYnNpZGlhbi1Db3BpbG90LCBhIGZyaWVuZGx5IEFJIGFzc2lzdGFudCB0aGF0IGhlbHBzIHdyaXRlcnMgY3JhZnQgZHJhZnRzIGJhc2VkIG9uIHRoZWlyIG5vdGVzLlxcblxcbllvdXIgdGFzayBpcyB0byBnZW5lcmF0ZSBhIGZldyBwYXJhZ3JhcGhzIGJhc2VkIG9uIGEgZ2l2ZW4gc2VjdGlvbiBoZWFkaW5nLlwiLFxuXHRzeXN0ZW1Db250ZW50UmVmbGVjdFdlZWs6IFwiWW91IGFyZSBhIGZyaWVuZGx5IEFJIHRoZXJhcGlzdCB0aGF0IGhlbHBzIHVzZXJzIHJlZmxlY3Qgb24gdGhlaXIgd2VlayBhbmQgZXZva2UgZmVlbGluZ3Mgb2YgZ3JhdGl0dWRlLCBwb3NpdGl2aXR5LCBqb3kgZm9yIGxpZmUuIEdpdmVuIHRoZWlyIGpvdXJuYWwgZW50cmllcywgd3JpdGUgYSBwYXJhZ3JhcGggZm9yIGVhY2ggb2YgdGhlIGZvbGxvd2luZzpcXG5cXG4qIENlbGVicmF0ZSB3aGF0IHdlbnQgd2VsbFxcbiogUmVmbGVjdCBvbiBhcmVhcyBmb3IgZ3Jvd3RoXFxuKiBTdWdnZXN0IGdvYWxzIGZvciBuZXh0IHdlZWtcIlxufVxuXG5leHBvcnQgZGVmYXVsdCBjbGFzcyBDb3BpbG90UGx1Z2luIGV4dGVuZHMgUGx1Z2luIHtcblx0c2V0dGluZ3M6IENvcGlsb3RQbHVnaW5TZXR0aW5ncztcblx0cHJvY2Vzc2luZyA9IGZhbHNlO1xuXG5cdC8vIE9wZW5zIGEgbmV3IHBhbmUgdG8gZGlzcGxheSB0aGUgcmV0cmlldmVkIGRvY3Ncblx0YXN5bmMgb3Blbk5ld1BhbmUoY29udGVudDogc3RyaW5nKSB7XG5cdFx0Y29uc3QgZmlsZW5hbWUgPSAnUmV0cmlldmVkIGRvY3MubWQnO1xuXHRcdGxldCBmaWxlID0gdGhpcy5hcHAudmF1bHQuZ2V0QWJzdHJhY3RGaWxlQnlQYXRoKGZpbGVuYW1lKSBhcyBURmlsZTtcblxuXHRcdGlmIChmaWxlKSB7XG5cdFx0XHRhd2FpdCB0aGlzLmFwcC52YXVsdC5tb2RpZnkoZmlsZSwgY29udGVudCk7XG5cdFx0fSBlbHNlIHtcblx0XHRcdGZpbGUgPSBhd2FpdCB0aGlzLmFwcC52YXVsdC5jcmVhdGUoZmlsZW5hbWUsIGNvbnRlbnQpO1xuXHRcdH1cblxuXHRcdC8vIENoZWNrIGlmIHRoZXJlIGlzIGFscmVhZHkgYW4gb3BlbiBwYW5lIHdpdGggdGhlIGZpbGVcblx0XHRjb25zdCBleGlzdGluZ0xlYWYgPSB0aGlzLmFwcC53b3Jrc3BhY2UuZ2V0TGVhdmVzT2ZUeXBlKCdtYXJrZG93bicpLmZpbmQobGVhZiA9PiBsZWFmLnZpZXcuZmlsZSAmJiBsZWFmLnZpZXcuZmlsZS5wYXRoID09PSBmaWxlLnBhdGgpO1xuXG5cdFx0aWYgKGV4aXN0aW5nTGVhZikge1xuXHRcdFx0Ly8gSWYgYSBwYW5lIHdpdGggdGhlIGZpbGUgYWxyZWFkeSBleGlzdHMsIGp1c3Qgc2V0IHRoZSBjb250ZW50XG5cdFx0XHQoZXhpc3RpbmdMZWFmLnZpZXcgYXMgTWFya2Rvd25WaWV3KS5lZGl0b3Iuc2V0VmFsdWUoY29udGVudCk7XG5cdFx0fSBlbHNlIHtcblx0XHRcdC8vIElmIG5vIHBhbmUgd2l0aCB0aGUgZmlsZSBleGlzdHMsIGNyZWF0ZSBhIG5ldyBvbmVcblx0XHRcdGNvbnN0IGxlYWYgPSB0aGlzLmFwcC53b3Jrc3BhY2UuZ2V0TGVhZignc3BsaXQnLCAndmVydGljYWwnKTtcblx0XHRcdGxlYWYub3BlbkZpbGUoZmlsZSk7XG5cdFx0fVxuXHR9XG5cblxuXHRwcml2YXRlIGFzeW5jIHF1ZXJ5TExNKG1lc3NhZ2VzOiBBcnJheTxhbnk+LCBtb2RlbDogc3RyaW5nLCB0ZW1wZXJhdHVyZSA9IDAuNykge1xuXHRcdHJldHVybiBhd2FpdCBmZXRjaCgnaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS92MS9jaGF0L2NvbXBsZXRpb25zJywge1xuXHRcdFx0bWV0aG9kOiAnUE9TVCcsXG5cdFx0XHRoZWFkZXJzOiB7XG5cdFx0XHRcdCdDb250ZW50LVR5cGUnOiAnYXBwbGljYXRpb24vanNvbicsXG5cdFx0XHRcdCdBdXRob3JpemF0aW9uJzogYEJlYXJlciAke3RoaXMuc2V0dGluZ3MuYXBpS2V5fWBcblx0XHRcdH0sXG5cdFx0XHRib2R5OiBKU09OLnN0cmluZ2lmeSh7XG5cdFx0XHRcdCdtb2RlbCc6IG1vZGVsLFxuXHRcdFx0XHQndGVtcGVyYXR1cmUnOiB0ZW1wZXJhdHVyZSxcblx0XHRcdFx0J21lc3NhZ2VzJzogbWVzc2FnZXMsXG5cdFx0XHRcdCdzdHJlYW0nOiB0cnVlXG5cdFx0XHR9KVxuXHRcdH0pO1xuXHR9XG5cblx0YXN5bmMgb25sb2FkKCkge1xuXHRcdGF3YWl0IHRoaXMubG9hZFNldHRpbmdzKCk7XG5cblx0XHRhc3luYyBmdW5jdGlvbiByZWFkKHJlYWRlcjogYW55LCBlZGl0b3I6IEVkaXRvcik6IFByb21pc2U8dm9pZD4ge1xuXHRcdFx0bGV0IGJ1ZmZlciA9ICcnO1xuXHRcdFx0Y29uc3QgeyB2YWx1ZSwgZG9uZSB9ID0gYXdhaXQgcmVhZGVyLnJlYWQoKTtcblxuXHRcdFx0aWYgKGRvbmUpIHtcblx0XHRcdFx0Ly8gZWRpdG9yLnJlcGxhY2VTZWxlY3Rpb24oc2VsZWN0aW9uICsgJ1xcblxcbicgKyBjb21wbGV0aW9uLnRyaW0oKSk7XG5cdFx0XHRcdHN0YXR1c0Jhckl0ZW1FbC5zZXRUZXh0KCdEb25lIHdpdGggQ29waWxvdCB0YXNrIScpO1xuXHRcdFx0XHRyZXR1cm47XG5cdFx0XHR9XG5cblx0XHRcdGNvbnN0IGRlY29kZWQgPSBuZXcgVGV4dERlY29kZXIoKS5kZWNvZGUodmFsdWUpO1xuXHRcdFx0YnVmZmVyICs9IGRlY29kZWQ7XG5cdFx0XHRsZXQgc3RhcnQgPSAwO1xuXHRcdFx0bGV0IGVuZCA9IGJ1ZmZlci5pbmRleE9mKCdcXG4nKTtcblxuXHRcdFx0d2hpbGUgKGVuZCAhPT0gLTEpIHtcblx0XHRcdFx0Y29uc3QgbWVzc2FnZSA9IGJ1ZmZlci5zbGljZShzdGFydCwgZW5kKTtcblx0XHRcdFx0c3RhcnQgPSBlbmQgKyAxO1xuXG5cdFx0XHRcdHRyeSB7XG5cdFx0XHRcdFx0Y29uc3QgbWVzc2FnZVdpdGhvdXRQcmVmaXggPSBtZXNzYWdlLnJlcGxhY2UoJ2RhdGE6ICcsICcnKTtcblx0XHRcdFx0XHRjb25zdCBqc29uID0gSlNPTi5wYXJzZShtZXNzYWdlV2l0aG91dFByZWZpeCk7XG5cblx0XHRcdFx0XHRsZXQgbGFzdFRva2VuID0gJyc7XG5cblx0XHRcdFx0XHRpZiAoanNvbi5jaG9pY2VzICYmIGpzb24uY2hvaWNlcy5sZW5ndGggPiAwICYmIGpzb24uY2hvaWNlc1swXS5kZWx0YSAmJiBqc29uLmNob2ljZXNbMF0uZGVsdGEuY29udGVudCkge1xuXHRcdFx0XHRcdFx0bGV0IHRva2VuID0ganNvbi5jaG9pY2VzWzBdLmRlbHRhLmNvbnRlbnQ7XG5cblx0XHRcdFx0XHRcdC8vIElmIHRva2VuIGlzIGEgc3BhY2UsIGFwcGVuZCBpdCB0byBsYXN0IHRva2VuXG5cdFx0XHRcdFx0XHRpZiAodG9rZW4gPT09ICcgJykge1xuXHRcdFx0XHRcdFx0XHRsYXN0VG9rZW4gKz0gdG9rZW47XG5cdFx0XHRcdFx0XHRcdHRva2VuID0gbGFzdFRva2VuO1xuXHRcdFx0XHRcdFx0fSBlbHNlIHtcblx0XHRcdFx0XHRcdFx0Ly8gU2F2ZSB0aGUgbGFzdCBub24tc3BhY2UgdG9rZW5cblx0XHRcdFx0XHRcdFx0bGFzdFRva2VuID0gdG9rZW47XG5cdFx0XHRcdFx0XHR9XG5cblx0XHRcdFx0XHRcdC8vIFJlcGxhY2UgaW4gdGhlIGVkaXRvclxuXHRcdFx0XHRcdFx0ZWRpdG9yLnJlcGxhY2VTZWxlY3Rpb24odG9rZW4pO1xuXHRcdFx0XHRcdH1cblxuXHRcdFx0XHR9IGNhdGNoIChlcnIpIHtcblx0XHRcdFx0XHQvLyBjb25zb2xlLmVycm9yKCdGYWlsZWQgdG8gcGFyc2UgSlNPTjogJywgZXJyKTtcblx0XHRcdFx0fVxuXHRcdFx0XHRlbmQgPSBidWZmZXIuaW5kZXhPZignXFxuJywgc3RhcnQpO1xuXHRcdFx0fVxuXHRcdFx0YnVmZmVyID0gYnVmZmVyLnNsaWNlKHN0YXJ0KTtcblx0XHRcdHJlcXVlc3RBbmltYXRpb25GcmFtZSgoKSA9PiByZWFkKHJlYWRlciwgZWRpdG9yKSk7XG5cdFx0fVxuXG5cdFx0Ly8gVGhpcyBhZGRzIGEgc3RhdHVzIGJhciBpdGVtIHRvIHRoZSBib3R0b20gb2YgdGhlIGFwcC4gRG9lcyBub3Qgd29yayBvbiBtb2JpbGUgYXBwcy5cblx0XHRjb25zdCBzdGF0dXNCYXJJdGVtRWwgPSB0aGlzLmFkZFN0YXR1c0Jhckl0ZW0oKTtcblx0XHRzdGF0dXNCYXJJdGVtRWwuc2V0VGV4dCgnQ29waWxvdCBsb2FkZWQnKTtcblxuXHRcdC8vIEVkaXRvciBjb21tYW5kIHRoYXQgZHJhZnRzIGEgc2VjdGlvbiBnaXZlbiB0aGUgc2VjdGlvbiBoZWFkaW5nIGFuZCBjb250ZXh0XG5cdFx0dGhpcy5hZGRDb21tYW5kKHtcblx0XHRcdGlkOiAnY29waWxvdC1kcmFmdC1zZWN0aW9uJyxcblx0XHRcdG5hbWU6ICdEcmFmdCBTZWN0aW9uJyxcblx0XHRcdGVkaXRvckNhbGxiYWNrOiBhc3luYyAoZWRpdG9yOiBFZGl0b3IsIHZpZXc6IE1hcmtkb3duVmlldykgPT4ge1xuXHRcdFx0XHRjb25zdCBzZWxlY3Rpb24gPSBlZGl0b3IuZ2V0U2VsZWN0aW9uKCk7XG5cdFx0XHRcdGNvbnN0IHF1ZXJ5ID0gc2VsZWN0aW9uLnJlcGxhY2UoL1teYS16MC05IF0vZ2ksICcnKTtcblx0XHRcdFx0c3RhdHVzQmFySXRlbUVsLnNldFRleHQoJ1J1bm5pbmcgQ29waWxvdC4uLicpO1xuXG5cdFx0XHRcdC8vIFJldHJpZXZlIHJlbGV2YW50IGNodW5rcyBmcm9tIHRoZSBzZXJ2ZXJcblx0XHRcdFx0Y29uc3QgcmVzdFJlc3BvbnNlID0gYXdhaXQgZmV0Y2goYGh0dHA6Ly8wLjAuMC4wOjgwMDAvZ2V0X2NodW5rcz9xdWVyeT0ke2VuY29kZVVSSUNvbXBvbmVudChxdWVyeSl9YCk7XG5cdFx0XHRcdGNvbnNvbGUubG9nKCdyZXNwb25zZScsIHJlc3RSZXNwb25zZSk7XG5cdFx0XHRcdGlmICghcmVzdFJlc3BvbnNlLm9rKSB7XG5cdFx0XHRcdFx0Y29uc29sZS5lcnJvcignQW4gZXJyb3Igb2NjdXJyZWQgd2hpbGUgZmV0Y2hpbmcgY2h1bmtzJywgYXdhaXQgcmVzdFJlc3BvbnNlLnRleHQoKSk7XG5cdFx0XHRcdFx0c3RhdHVzQmFySXRlbUVsLnNldFRleHQoJ0VSUk9SOiBObyByZXNwb25zZSBmcm9tIHJldHJpZXZhbCBBUEknKTtcblx0XHRcdFx0XHRyZXR1cm47XG5cdFx0XHRcdH1cblxuXHRcdFx0XHRjb25zdCByZXN0RGF0YSA9IGF3YWl0IHJlc3RSZXNwb25zZS5qc29uKCk7XG5cdFx0XHRcdGNvbnN0IHJldHJpZXZlZERvY3MgPSBbXTtcblx0XHRcdFx0Y29uc3QgcmVsZXZhbnRDb250ZW50ID0gW107XG5cdFx0XHRcdGZvciAobGV0IGkgPSAwOyBpIDwgcmVzdERhdGEubGVuZ3RoOyBpKyspIHtcblx0XHRcdFx0XHQvLyBBc3N1bWluZyB0dGlsZSBhbmQgY2h1bmsga2V5cyBhcmUgYWx3YXlzIHByZXNlbnQgaW4gZWFjaCBkaWN0aW9uYXJ5XG5cdFx0XHRcdFx0cmV0cmlldmVkRG9jcy5wdXNoKGBbWyR7cmVzdERhdGFbaV0udGl0bGV9XV1cXG5cXG4ke3Jlc3REYXRhW2ldLmNodW5rfWApO1xuXHRcdFx0XHRcdHJlbGV2YW50Q29udGVudC5wdXNoKGBUaXRsZTogJHtyZXN0RGF0YVtpXS50aXRsZX1cXG5Db250ZXh0OiAke3Jlc3REYXRhW2ldLmNodW5rfVxcbmApO1xuXHRcdFx0XHR9XG5cdFx0XHRcdGNvbnN0IHJldHJpZXZlZERvY3NEaXNwbGF5ID0gcmV0cmlldmVkRG9jcy5qb2luKCdcXG4tLS1cXG4nKTtcblx0XHRcdFx0Y29uc29sZS5sb2coYFBBUlNFRCBSRVRSSUVWRUQgRE9DUzogXFxuXFxuJHtyZXRyaWV2ZWREb2NzRGlzcGxheX1gKTtcblxuXHRcdFx0XHR0aGlzLm9wZW5OZXdQYW5lKHJldHJpZXZlZERvY3NEaXNwbGF5KTtcblxuXHRcdFx0XHQvLyBDcmVhdGUgdXNlciBjb250ZW50XG5cdFx0XHRcdGNvbnN0IHVzZXJfY29udGVudCA9IGBTZWN0aW9uIGhlYWRpbmc6ICR7cXVlcnl9XFxuXFxuJHtyZWxldmFudENvbnRlbnQuam9pbignLS0tXFxuJyl9XFxuXFxuRHJhZnQ6YDtcblx0XHRcdFx0Y29uc29sZS5sb2coYFVTRVIgQ09OVEVOVDpcXG5cXG4ke3VzZXJfY29udGVudH1gKTtcblxuXHRcdFx0XHQvLyBTZW5kIG1lc3NhZ2VzIHRvIE9wZW5BSVxuXHRcdFx0XHRjb25zdCBtZXNzYWdlcyA9IFtcblx0XHRcdFx0XHR7ICdyb2xlJzogJ3N5c3RlbScsICdjb250ZW50JzogdGhpcy5zZXR0aW5ncy5zeXN0ZW1Db250ZW50RHJhZnRTZWN0aW9uIH0sXG5cdFx0XHRcdFx0eyAncm9sZSc6ICd1c2VyJywgJ2NvbnRlbnQnOiB1c2VyX2NvbnRlbnQgfVxuXHRcdFx0XHRdXG5cdFx0XHRcdGNvbnN0IHJlc3BvbnNlID0gYXdhaXQgdGhpcy5xdWVyeUxMTShtZXNzYWdlcywgdGhpcy5zZXR0aW5ncy5tb2RlbCwgMC43KTtcblxuXHRcdFx0XHRpZiAoIXJlc3BvbnNlLm9rKSB7XG5cdFx0XHRcdFx0Y29uc3QgZXJyb3JEYXRhID0gYXdhaXQgcmVzcG9uc2UuanNvbigpO1xuXHRcdFx0XHRcdGNvbnNvbGUuZXJyb3IoJ0FuIGVycm9yIG9jY3VycmVkJywgZXJyb3JEYXRhKTtcblx0XHRcdFx0XHRzdGF0dXNCYXJJdGVtRWwuc2V0VGV4dCgnRVJST1I6IE5vIHJlc3BvbnNlIGZyb20gTExNIEFQSScpO1xuXHRcdFx0XHR9IGVsc2Uge1xuXHRcdFx0XHRcdGNvbnN0IHJlYWRlciA9IHJlc3BvbnNlLmJvZHk/LmdldFJlYWRlcigpO1xuXHRcdFx0XHRcdGVkaXRvci5yZXBsYWNlU2VsZWN0aW9uKHNlbGVjdGlvbiArICdcXG5cXG4nKTtcblxuXHRcdFx0XHRcdGF3YWl0IHJlYWQocmVhZGVyLCBlZGl0b3IpO1xuXHRcdFx0XHR9XG5cdFx0XHR9XG5cdFx0fSk7XG5cblx0XHQvLyBFZGl0b3IgY29tbWFuZCB0aGF0IGRyYWZ0cyBhIHNlY3Rpb24gZ2l2ZW4gdGhlIHNlY3Rpb24gaGVhZGluZyBPTkxZXG5cdFx0dGhpcy5hZGRDb21tYW5kKHtcblx0XHRcdGlkOiAnY29waWxvdC1kcmFmdC1zZWN0aW9uLW5vLWNvbnRleHQnLFxuXHRcdFx0bmFtZTogJ0RyYWZ0IFNlY3Rpb24gKG5vIGNvbnRleHQpJyxcblx0XHRcdGVkaXRvckNhbGxiYWNrOiBhc3luYyAoZWRpdG9yOiBFZGl0b3IsIHZpZXc6IE1hcmtkb3duVmlldykgPT4ge1xuXHRcdFx0XHRjb25zdCBzZWxlY3Rpb24gPSBlZGl0b3IuZ2V0U2VsZWN0aW9uKCk7XG5cdFx0XHRcdGNvbnN0IHF1ZXJ5ID0gc2VsZWN0aW9uLnJlcGxhY2UoL1teYS16MC05IF0vZ2ksICcnKTtcblx0XHRcdFx0c3RhdHVzQmFySXRlbUVsLnNldFRleHQoJ1J1bm5pbmcgQ29waWxvdC4uLicpO1xuXG5cdFx0XHRcdC8vIENyZWF0ZSB1c2VyIGNvbnRlbnRcblx0XHRcdFx0Y29uc3QgdXNlcl9jb250ZW50ID0gYFNlY3Rpb24gaGVhZGluZzogJHtxdWVyeX1cXG5cXG5EcmFmdDpgO1xuXHRcdFx0XHRjb25zb2xlLmxvZyhgVVNFUiBDT05URU5UOlxcblxcbiR7dXNlcl9jb250ZW50fWApO1xuXG5cdFx0XHRcdC8vIFNlbmQgbWVzc2FnZXMgdG8gT3BlbkFJXG5cdFx0XHRcdGNvbnN0IG1lc3NhZ2VzID0gW1xuXHRcdFx0XHRcdHsgJ3JvbGUnOiAnc3lzdGVtJywgJ2NvbnRlbnQnOiB0aGlzLnNldHRpbmdzLnN5c3RlbUNvbnRlbnREcmFmdFNlY3Rpb25Ob0NvbnRleHQgfSxcblx0XHRcdFx0XHR7ICdyb2xlJzogJ3VzZXInLCAnY29udGVudCc6IHVzZXJfY29udGVudCB9XG5cdFx0XHRcdF1cblx0XHRcdFx0Y29uc3QgcmVzcG9uc2UgPSBhd2FpdCB0aGlzLnF1ZXJ5TExNKG1lc3NhZ2VzLCB0aGlzLnNldHRpbmdzLm1vZGVsLCAwLjcpO1xuXG5cdFx0XHRcdGlmICghcmVzcG9uc2Uub2spIHtcblx0XHRcdFx0XHRjb25zdCBlcnJvckRhdGEgPSBhd2FpdCByZXNwb25zZS5qc29uKCk7XG5cdFx0XHRcdFx0Y29uc29sZS5lcnJvcignQW4gZXJyb3Igb2NjdXJyZWQnLCBlcnJvckRhdGEpO1xuXHRcdFx0XHRcdHN0YXR1c0Jhckl0ZW1FbC5zZXRUZXh0KCdFUlJPUjogTm8gcmVzcG9uc2UgZnJvbSBMTE0gQVBJJyk7XG5cdFx0XHRcdH0gZWxzZSB7XG5cdFx0XHRcdFx0Y29uc3QgcmVhZGVyID0gcmVzcG9uc2UuYm9keT8uZ2V0UmVhZGVyKCk7XG5cdFx0XHRcdFx0ZWRpdG9yLnJlcGxhY2VTZWxlY3Rpb24oc2VsZWN0aW9uICsgJ1xcblxcbicpO1xuXG5cdFx0XHRcdFx0YXdhaXQgcmVhZChyZWFkZXIsIGVkaXRvcik7XG5cdFx0XHRcdH1cblx0XHRcdH1cblx0XHR9KTtcblxuXHRcdHRoaXMuYWRkQ29tbWFuZCh7XG5cdFx0XHRpZDogJ2NvcGlsb3QtcmVmbGVjdC13ZWVrJyxcblx0XHRcdG5hbWU6ICdSZWZsZWN0IG9uIHRoZSB3ZWVrJyxcblx0XHRcdGVkaXRvckNhbGxiYWNrOiBhc3luYyAoZWRpdG9yOiBFZGl0b3IsIHZpZXc6IE1hcmtkb3duVmlldykgPT4ge1xuXHRcdFx0XHRzdGF0dXNCYXJJdGVtRWwuc2V0VGV4dCgnUnVubmluZyBDb3BpbG90Li4uJyk7XG5cblx0XHRcdFx0Ly8gR2V0IHRoZSBkYXRlIGZyb20gdGhlIG5vdGUncyB0aXRsZVxuXHRcdFx0XHRjb25zdCB0aXRsZURhdGVTdHIgPSB2aWV3LmZpbGUuYmFzZW5hbWU7XG5cdFx0XHRcdGNvbnN0IGRhdGUgPSBuZXcgRGF0ZSh0aXRsZURhdGVTdHIpO1xuXHRcdFx0XHRjb25zb2xlLmxvZyhgRGF0ZTogJHtkYXRlLnRvSVNPU3RyaW5nKCkuc2xpY2UoMCwgMTApfWApO1xuXG5cdFx0XHRcdGxldCBwYXN0Q29udGVudCA9ICcnO1xuXHRcdFx0XHRmb3IgKGxldCBpID0gMDsgaSA8IDc7IGkrKykge1xuXHRcdFx0XHRcdGRhdGUuc2V0RGF0ZShkYXRlLmdldERhdGUoKSAtIDEpO1xuXHRcdFx0XHRcdGNvbnN0IGRhdGVTdHIgPSBkYXRlLnRvSVNPU3RyaW5nKCkuc2xpY2UoMCwgMTApO1xuXHRcdFx0XHRcdGNvbnN0IGRhaWx5Tm90ZSA9IHRoaXMuYXBwLnZhdWx0LmdldEFic3RyYWN0RmlsZUJ5UGF0aChgZGFpbHkvJHtkYXRlU3RyfS5tZGApO1xuXHRcdFx0XHRcdGNvbnNvbGUubG9nKGBkYXRlU3RyOiAke2RhdGVTdHJ9LCBkYWlseU5vdGU6ICR7ZGFpbHlOb3RlfWApO1xuXHRcdFx0XHRcdGlmIChkYWlseU5vdGUgJiYgZGFpbHlOb3RlIGluc3RhbmNlb2YgVEZpbGUpIHtcblx0XHRcdFx0XHRcdGNvbnN0IG5vdGVDb250ZW50ID0gYXdhaXQgdGhpcy5hcHAudmF1bHQucmVhZChkYWlseU5vdGUpO1xuXHRcdFx0XHRcdFx0Y29uc29sZS5sb2coYGRhdGVTdHI6ICR7ZGF0ZVN0cn0sIGRhaWx5Tm90ZTogJHtkYWlseU5vdGV9LCBub3RlQ29udGVudDpcXG5cXG4ke25vdGVDb250ZW50fWApO1xuXHRcdFx0XHRcdFx0cGFzdENvbnRlbnQgKz0gYERhdGU6ICR7ZGF0ZVN0cn1cXG5cXG5Kb3VybmFsIGVudHJ5OlxcbiR7bm90ZUNvbnRlbnR9XFxuLS0tXFxuYDtcblx0XHRcdFx0XHR9XG5cdFx0XHRcdH1cblx0XHRcdFx0Y29uc29sZS5sb2coYFBBU1QgSk9VUk5BTCBFTlRSSUVTOiBcXG5cXG4ke3Bhc3RDb250ZW50fWApO1xuXG5cdFx0XHRcdHRoaXMub3Blbk5ld1BhbmUocGFzdENvbnRlbnQpO1xuXG5cdFx0XHRcdC8vIENyZWF0ZSB1c2VyIGNvbnRlbnRcblx0XHRcdFx0Y29uc3QgdXNlcl9jb250ZW50ID0gYFRoZXNlIGFyZSB0aGUgam91cm5hbCBlbnRyaWVzIGZvciBteSB3ZWVrOlxcbiR7cGFzdENvbnRlbnR9XFxuXFxuUmVmbGVjdGlvbjpgO1xuXHRcdFx0XHRjb25zb2xlLmxvZyhgVVNFUiBDT05URU5UOlxcblxcbiR7dXNlcl9jb250ZW50fWApO1xuXG5cdFx0XHRcdC8vIFNlbmQgbWVzc2FnZXMgdG8gT3BlbkFJXG5cdFx0XHRcdGNvbnN0IG1lc3NhZ2VzID0gW1xuXHRcdFx0XHRcdHsgJ3JvbGUnOiAnc3lzdGVtJywgJ2NvbnRlbnQnOiB0aGlzLnNldHRpbmdzLnN5c3RlbUNvbnRlbnRSZWZsZWN0V2VlayB9LFxuXHRcdFx0XHRcdHsgJ3JvbGUnOiAndXNlcicsICdjb250ZW50JzogdXNlcl9jb250ZW50IH1cblx0XHRcdFx0XVxuXHRcdFx0XHRjb25zdCByZXNwb25zZSA9IGF3YWl0IHRoaXMucXVlcnlMTE0obWVzc2FnZXMsIHRoaXMuc2V0dGluZ3MubW9kZWwsIDAuNyk7XG5cblx0XHRcdFx0aWYgKCFyZXNwb25zZS5vaykge1xuXHRcdFx0XHRcdGNvbnN0IGVycm9yRGF0YSA9IGF3YWl0IHJlc3BvbnNlLmpzb24oKTtcblx0XHRcdFx0XHRjb25zb2xlLmVycm9yKCdBbiBlcnJvciBvY2N1cnJlZCcsIGVycm9yRGF0YSk7XG5cdFx0XHRcdFx0c3RhdHVzQmFySXRlbUVsLnNldFRleHQoJ0VSUk9SOiBObyByZXNwb25zZSBmcm9tIExMTSBBUEknKTtcblx0XHRcdFx0fSBlbHNlIHtcblx0XHRcdFx0XHRjb25zdCByZWFkZXIgPSByZXNwb25zZS5ib2R5Py5nZXRSZWFkZXIoKTtcblx0XHRcdFx0XHRlZGl0b3IucmVwbGFjZVNlbGVjdGlvbignXFxuJyk7XG5cblx0XHRcdFx0XHRhd2FpdCByZWFkKHJlYWRlciwgZWRpdG9yKTtcblx0XHRcdFx0fVxuXHRcdFx0fVxuXHRcdH0pO1xuXG5cblx0XHQvLyBUaGlzIGFkZHMgYSBzZXR0aW5ncyB0YWIgc28gdGhlIHVzZXIgY2FuIGNvbmZpZ3VyZSB2YXJpb3VzIGFzcGVjdHMgb2YgdGhlIHBsdWdpblxuXHRcdHRoaXMuYWRkU2V0dGluZ1RhYihuZXcgQ29waWxvdFNldHRpbmdUYWIodGhpcy5hcHAsIHRoaXMpKTtcblxuXHRcdC8vIElmIHRoZSBwbHVnaW4gaG9va3MgdXAgYW55IGdsb2JhbCBET00gZXZlbnRzIChvbiBwYXJ0cyBvZiB0aGUgYXBwIHRoYXQgZG9lc24ndCBiZWxvbmcgdG8gdGhpcyBwbHVnaW4pXG5cdFx0Ly8gVXNpbmcgdGhpcyBmdW5jdGlvbiB3aWxsIGF1dG9tYXRpY2FsbHkgcmVtb3ZlIHRoZSBldmVudCBsaXN0ZW5lciB3aGVuIHRoaXMgcGx1Z2luIGlzIGRpc2FibGVkLlxuXHRcdHRoaXMucmVnaXN0ZXJEb21FdmVudChkb2N1bWVudCwgJ2NsaWNrJywgKGV2dDogTW91c2VFdmVudCkgPT4ge1xuXHRcdFx0Y29uc29sZS5sb2coJ2NsaWNrJywgZXZ0KTtcblx0XHR9KTtcblxuXHRcdC8vIFdoZW4gcmVnaXN0ZXJpbmcgaW50ZXJ2YWxzLCB0aGlzIGZ1bmN0aW9uIHdpbGwgYXV0b21hdGljYWxseSBjbGVhciB0aGUgaW50ZXJ2YWwgd2hlbiB0aGUgcGx1Z2luIGlzIGRpc2FibGVkLlxuXHRcdHRoaXMucmVnaXN0ZXJJbnRlcnZhbCh3aW5kb3cuc2V0SW50ZXJ2YWwoKCkgPT4gY29uc29sZS5sb2coJ3NldEludGVydmFsJyksIDUgKiA2MCAqIDEwMDApKTtcblx0fVxuXG5cdGFzeW5jIGxvYWRTZXR0aW5ncygpIHtcblx0XHR0aGlzLnNldHRpbmdzID0gT2JqZWN0LmFzc2lnbih7fSwgREVGQVVMVF9TRVRUSU5HUywgYXdhaXQgdGhpcy5sb2FkRGF0YSgpKTtcblx0fVxuXG5cdGFzeW5jIHNhdmVTZXR0aW5ncygpIHtcblx0XHRhd2FpdCB0aGlzLnNhdmVEYXRhKHRoaXMuc2V0dGluZ3MpO1xuXHR9XG59XG5cbmNsYXNzIENvcGlsb3RTZXR0aW5nVGFiIGV4dGVuZHMgUGx1Z2luU2V0dGluZ1RhYiB7XG5cdHBsdWdpbjogQ29waWxvdFBsdWdpbjtcblxuXHRjb25zdHJ1Y3RvcihhcHA6IEFwcCwgcGx1Z2luOiBDb3BpbG90UGx1Z2luKSB7XG5cdFx0c3VwZXIoYXBwLCBwbHVnaW4pO1xuXHRcdHRoaXMucGx1Z2luID0gcGx1Z2luO1xuXHR9XG5cblx0ZGlzcGxheSgpOiB2b2lkIHtcblx0XHRjb25zdCB7IGNvbnRhaW5lckVsIH0gPSB0aGlzO1xuXG5cdFx0Y29udGFpbmVyRWwuZW1wdHkoKTtcblxuXHRcdGNvbnRhaW5lckVsLmNyZWF0ZUVsKCdoMicsIHsgdGV4dDogJ1NldHRpbmdzIGZvciBPYnNpZGlhbiBDb3BpbG90JyB9KTtcblxuXHRcdG5ldyBTZXR0aW5nKGNvbnRhaW5lckVsKVxuXHRcdFx0LnNldE5hbWUoJ09wZW5BSSBBUEkgS2V5Jylcblx0XHRcdC5zZXREZXNjKCdFbnRlciB5b3VyIE9wZW5BSSBBUEkga2V5Jylcblx0XHRcdC5hZGRUZXh0KHRleHQgPT4gdGV4dFxuXHRcdFx0XHQuc2V0UGxhY2Vob2xkZXIoJ0FQSSBLZXknKVxuXHRcdFx0XHQuc2V0VmFsdWUodGhpcy5wbHVnaW4uc2V0dGluZ3MuYXBpS2V5KVxuXHRcdFx0XHQub25DaGFuZ2UoYXN5bmMgKHZhbHVlKSA9PiB7XG5cdFx0XHRcdFx0dGhpcy5wbHVnaW4uc2V0dGluZ3MuYXBpS2V5ID0gdmFsdWU7XG5cdFx0XHRcdFx0YXdhaXQgdGhpcy5wbHVnaW4uc2F2ZVNldHRpbmdzKCk7XG5cdFx0XHRcdH0pKTtcblxuXHRcdG5ldyBTZXR0aW5nKGNvbnRhaW5lckVsKVxuXHRcdFx0LnNldE5hbWUoJ01vZGVsIE5hbWUnKVxuXHRcdFx0LnNldERlc2MoJ0VudGVyIHRoZSBtb2RlbCB1c2VkIGZvciBnZW5lcmF0aW9uJylcblx0XHRcdC5hZGRUZXh0KHRleHQgPT4gdGV4dFxuXHRcdFx0XHQuc2V0UGxhY2Vob2xkZXIoJ01vZGVsIG5hbWUnKVxuXHRcdFx0XHQuc2V0VmFsdWUodGhpcy5wbHVnaW4uc2V0dGluZ3MubW9kZWwpXG5cdFx0XHRcdC5vbkNoYW5nZShhc3luYyAodmFsdWUpID0+IHtcblx0XHRcdFx0XHR0aGlzLnBsdWdpbi5zZXR0aW5ncy5tb2RlbCA9IHZhbHVlO1xuXHRcdFx0XHRcdGF3YWl0IHRoaXMucGx1Z2luLnNhdmVTZXR0aW5ncygpO1xuXHRcdFx0XHR9KSk7XG5cblx0XHRuZXcgU2V0dGluZyhjb250YWluZXJFbClcblx0XHRcdC5zZXROYW1lKCdTeXN0ZW0gUHJvbXB0OiBEcmFmdCBTZWN0aW9uJylcblx0XHRcdC5zZXREZXNjKCdEZWZpbmUgdGhlIHByb21wdCB1c2VkIGZvciBkcmFmdGluZyBhIHNlY3Rpb24gd2l0aCBjb250ZXh0Jylcblx0XHRcdC5hZGRUZXh0KHRleHQgPT4gdGV4dFxuXHRcdFx0XHQuc2V0UGxhY2Vob2xkZXIoJ1Byb21wdCB0byBkcmFmdCBhIHNlY3Rpb24nKVxuXHRcdFx0XHQuc2V0VmFsdWUodGhpcy5wbHVnaW4uc2V0dGluZ3Muc3lzdGVtQ29udGVudERyYWZ0U2VjdGlvbilcblx0XHRcdFx0Lm9uQ2hhbmdlKGFzeW5jICh2YWx1ZSkgPT4ge1xuXHRcdFx0XHRcdHRoaXMucGx1Z2luLnNldHRpbmdzLnN5c3RlbUNvbnRlbnREcmFmdFNlY3Rpb24gPSB2YWx1ZTtcblx0XHRcdFx0XHRhd2FpdCB0aGlzLnBsdWdpbi5zYXZlU2V0dGluZ3MoKTtcblx0XHRcdFx0fSkpO1xuXG5cdFx0bmV3IFNldHRpbmcoY29udGFpbmVyRWwpXG5cdFx0XHQuc2V0TmFtZSgnU3lzdGVtIFByb21wdDogRHJhZnQgU2VjdGlvbiAod2l0aG91dCBjb250ZXh0KScpXG5cdFx0XHQuc2V0RGVzYygnRGVmaW5lIHRoZSBwcm9tcHQgdXNlZCBmb3IgZHJhZnRpbmcgYSBzZWN0aW9uIHdpdGhvdXQgY29udGV4dCcpXG5cdFx0XHQuYWRkVGV4dCh0ZXh0ID0+IHRleHRcblx0XHRcdFx0LnNldFBsYWNlaG9sZGVyKCdQcm9tcHQgdG8gZHJhZnQgYSBzZWN0aW9uICh3aXRob3V0IGNvbnRleHQpJylcblx0XHRcdFx0LnNldFZhbHVlKHRoaXMucGx1Z2luLnNldHRpbmdzLnN5c3RlbUNvbnRlbnREcmFmdFNlY3Rpb25Ob0NvbnRleHQpXG5cdFx0XHRcdC5vbkNoYW5nZShhc3luYyAodmFsdWUpID0+IHtcblx0XHRcdFx0XHR0aGlzLnBsdWdpbi5zZXR0aW5ncy5zeXN0ZW1Db250ZW50RHJhZnRTZWN0aW9uTm9Db250ZXh0ID0gdmFsdWU7XG5cdFx0XHRcdFx0YXdhaXQgdGhpcy5wbHVnaW4uc2F2ZVNldHRpbmdzKCk7XG5cdFx0XHRcdH0pKTtcblxuXG5cdFx0bmV3IFNldHRpbmcoY29udGFpbmVyRWwpXG5cdFx0XHQuc2V0TmFtZSgnU3lzdGVtIFByb21wdDogUmVmbGVjdCBvbiB0aGUgd2VlaycpXG5cdFx0XHQuc2V0RGVzYygnRGVmaW5lIHRoZSBwcm9tcHQgdXNlZGAgdG8gcmVmbGVjdCBvbiB0aGUgd2VlaycpXG5cdFx0XHQuYWRkVGV4dCh0ZXh0ID0+IHRleHRcblx0XHRcdFx0LnNldFBsYWNlaG9sZGVyKCdQcm9tcHQgdG8gcmVmbGVjdCBvbiB0aGUgd2VlaycpXG5cdFx0XHRcdC5zZXRWYWx1ZSh0aGlzLnBsdWdpbi5zZXR0aW5ncy5zeXN0ZW1Db250ZW50UmVmbGVjdFdlZWspXG5cdFx0XHRcdC5vbkNoYW5nZShhc3luYyAodmFsdWUpID0+IHtcblx0XHRcdFx0XHR0aGlzLnBsdWdpbi5zZXR0aW5ncy5zeXN0ZW1Db250ZW50UmVmbGVjdFdlZWsgPSB2YWx1ZTtcblx0XHRcdFx0XHRhd2FpdCB0aGlzLnBsdWdpbi5zYXZlU2V0dGluZ3MoKTtcblx0XHRcdFx0fSkpO1xuXHR9XG59XG4iXSwKICAibWFwcGluZ3MiOiAiOzs7Ozs7Ozs7Ozs7Ozs7Ozs7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
+var main_default = ClaudeChatPlugin;

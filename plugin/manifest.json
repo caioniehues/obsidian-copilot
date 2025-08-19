@@ -1,10 +1,10 @@
 {
-	"id": "obsidian-copilot",
-	"name": "Copilot",
-	"version": "0.1",
+	"id": "claude-cli-chat",
+	"name": "Claude CLI Chat",
+	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "This is a prototype plugin for obsidian-copilot.",
-	"author": "Eugene Yan",
-	"authorUrl": "https://eugeneyan.com",
+	"description": "Chat with local Claude Code CLI directly from Obsidian. No API keys required - uses your local Claude installation.",
+	"author": "Claude Code Integration",
+	"authorUrl": "https://github.com/caioniehues/obsidian-copilot",
 	"isDesktopOnly": true
 }

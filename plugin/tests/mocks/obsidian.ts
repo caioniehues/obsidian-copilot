@@ -31,6 +31,10 @@ export class MockWorkspace {
     const leaf = this.leaves.find(leaf => leaf.view?.getViewType() === type.name);
     return leaf?.view as T || null;
   }
+  
+  revealLeaf(leaf: MockWorkspaceLeaf): void {
+    // Mock reveal leaf functionality
+  }
 }
 
 // Mock WorkspaceLeaf interface
@@ -111,6 +115,11 @@ export class MockEditor {
 // Mock Vault interface
 export class MockVault {
   private files: Map<string, MockTFile> = new Map();
+  adapter = {
+    path: {
+      resolve: (path: string) => `/mock/vault${path === '.' ? '' : '/' + path}`
+    }
+  };
   
   getAbstractFileByPath(path: string): MockTFile | null {
     return this.files.get(path) || null;
@@ -178,6 +187,10 @@ export class Plugin {
   
   addSettingTab(tab: any): void {
     // Mock settings tab
+  }
+  
+  registerView(type: string, viewCreator: any): void {
+    // Mock view registration
   }
   
   registerEvent(event: any): void {
